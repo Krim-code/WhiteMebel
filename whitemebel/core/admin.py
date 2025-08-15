@@ -1,5 +1,9 @@
+from django import forms
 from django.contrib import admin
 from .models import (
+    AttributeOption,
+    DeliveryDiscount,
+    DeliveryRegion,
     MainSlider,
     Order,
     OrderItem,
@@ -70,13 +74,38 @@ class TagAdmin(admin.ModelAdmin):
     prepopulated_fields = {"slug": ("name",)}
 
 
+class AttributeOptionInline(admin.TabularInline):
+    model = AttributeOption
+    extra = 1
+
 @admin.register(ProductAttribute)
 class ProductAttributeAdmin(admin.ModelAdmin):
-    list_display = ("name",)
-    search_fields = ("name",)
+    list_display = ("name", "slug", "filter_widget", "is_multiselect", "show_in_filter", "filter_order")
+    list_editable = ("filter_widget", "is_multiselect", "show_in_filter", "filter_order")
+    search_fields = ("name", "slug")
+    prepopulated_fields = {"slug": ("name",)}
 
 
+class ProductAttributeValueForm(forms.ModelForm):
+    class Meta:
+        model = ProductAttributeValue
+        fields = ("attribute", "option")
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        attr_id = (self.data.get(self.add_prefix("attribute"))
+                   or self.initial.get("attribute")
+                   or (self.instance.attribute_id if self.instance.pk else None))
+        qs = AttributeOption.objects.none()
+        if attr_id:
+            qs = AttributeOption.objects.filter(attribute_id=attr_id)
+        self.fields["option"].queryset = qs
+
+class ProductAttributeValueInline(admin.TabularInline):
+    model = ProductAttributeValue
+    form = ProductAttributeValueForm
+    extra = 1
+    autocomplete_fields = ("attribute", "option")
 @admin.register(Category)
 class CategoryAdmin(DraggableMPTTAdmin):
     prepopulated_fields = {'slug': ('name',)}
@@ -145,3 +174,22 @@ class MainSliderAdmin(admin.ModelAdmin):
             return format_html('<img src="{}" style="max-height: 60px; border-radius:4px;" />', obj.image.url)
         return "-"
     preview.short_description = "Превью"
+    
+# core/admin.py
+
+
+@admin.register(DeliveryRegion)
+class DeliveryRegionAdmin(admin.ModelAdmin):
+    list_display = ("name", "base_cost", "free_threshold",
+                    "delivery_days_min", "delivery_days_max", "is_active", "order")
+    list_filter = ("is_active",)
+    search_fields = ("name", "slug")
+    prepopulated_fields = {"slug": ("name",)}
+    ordering = ("order", "name")
+
+@admin.register(DeliveryDiscount)
+class DeliveryDiscountAdmin(admin.ModelAdmin):
+    list_display = ("title", "region", "discount_type", "value",
+                    "min_order_total", "active_from", "active_to", "is_active")
+    list_filter = ("discount_type", "is_active", "region")
+    search_fields = ("title",)

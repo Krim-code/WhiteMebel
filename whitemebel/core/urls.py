@@ -1,6 +1,24 @@
-from django.urls import path
-from . import views
+# api/urls.py
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from core.views import CategoryViewSet, DeliveryRegionListView, DeliveryRegionQuoteView, FiltersView, ProductDetailView, ProductListView, SliderViewSet
+# подключи свои ViewSet’ы
+# from core.views import ProductViewSet, CategoryViewSet, TagViewSet, ColorViewSet
+
+router = DefaultRouter()
+router.register(r'categories', CategoryViewSet, basename='category')
+router.register(r"slider", SliderViewSet, basename="slider")
+
+# router.register(r'products', ProductViewSet, basename='product')
+# router.register(r'categories', CategoryViewSet, basename='category')
+# router.register(r'tags', TagViewSet, basename='tag')
+# router.register(r'colors', ColorViewSet, basename='color')
 
 urlpatterns = [
-    path('', views.home, name='posts'),
-]
+    path("", include(router.urls)),
+    path('filters/', FiltersView.as_view(), name='filters'),
+    path('products/', ProductListView.as_view(), name='products-list'),
+    path('products/<slug:slug>/', ProductDetailView.as_view(), name='product-detail'),
+    path("shipping/regions/", DeliveryRegionListView.as_view(), name="shipping-regions"),
+    path("shipping/regions/<slug:slug>/quote/", DeliveryRegionQuoteView.as_view(), name="shipping-region-quote"),
+    ]

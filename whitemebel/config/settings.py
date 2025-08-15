@@ -9,7 +9,7 @@ https://docs.djangoproject.com/en/5.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
-
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -20,20 +20,22 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-%@#+u0hvuvhq(bm8w-5gu$uwzvrnl22yzyb4+24z2#7s53jxyt'
-
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-insecure-key")
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv("DJANGO_DEBUG", "0") in ("1","true","True","yes")
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
 
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS","").split(",") if o.strip()]
 # Application definition
 
 INSTALLED_APPS = [
-    'admin_interface',
-    'colorfield',
     'core',
+    "rest_framework",
+    "drf_spectacular",
+    "django_filters",
+    "drf_spectacular_sidecar",
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -71,6 +73,29 @@ TEMPLATES = [
     },
 ]
 
+REST_FRAMEWORK = {
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # опционально:
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "DEFAULT_FILTER_BACKENDS": [
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.SearchFilter",
+        "rest_framework.filters.OrderingFilter",
+    ],
+    "PAGE_SIZE": 24,
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "WhiteMebel API",
+    "DESCRIPTION": "Документация бекенда WhiteMebel.",
+    "VERSION": "1.0.0",
+    # если все ручки под /api/
+    "SCHEMA_PATH_PREFIX": r"/api",
+    # опционально: JWT/Basic и т.п.
+    # "SECURITY": [{"bearerAuth": []}],
+    # "COMPONENT_SPLIT_REQUEST": True,
+}
+
 WSGI_APPLICATION = 'config.wsgi.application'
 AUTH_USER_MODEL = 'core.User'
 
@@ -78,12 +103,23 @@ AUTH_USER_MODEL = 'core.User'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("DJANGO_DB_NAME", "app"),
+        "USER": os.getenv("DJANGO_DB_USER", "app"),
+        "PASSWORD": os.getenv("DJANGO_DB_PASSWORD", "password"),
+        "HOST": os.getenv("DJANGO_DB_HOST", "localhost"),
+        "PORT": int(os.getenv("DJANGO_DB_PORT", "5432")),
+        "CONN_MAX_AGE": 60,
     }
 }
 
+SPECTACULAR_SETTINGS = {
+    # ... твои настройки ...
+    "POSTPROCESSING_HOOKS": [
+        "core.schema_hooks.add_attribute_params",
+    ],
+}
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
@@ -119,8 +155,8 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
-STATIC_URL = 'static/'
-STATICFILES_DIRS = [BASE_DIR / 'static']
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
