@@ -326,3 +326,7 @@ class DeliveryRegionCostSerializer(serializers.ModelSerializer):
         return DeliveryDiscountBriefSerializer({
             "id": d.id, "title": d.title, "discount_type": d.discount_type, "value": d.value
         }).data
+        
+class ProductsByIdsResponseSerializer(serializers.Serializer):
+    results = ProductListSerializer(many=True)
+    missing = serializers.ListField(child=serializers.IntegerField(), default=[])
