@@ -5,7 +5,6 @@ from core.utils.slug import ascii_slug
 
 from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
-from django.utils.text import slugify
 from faker import Faker
 from PIL import Image, ImageDraw
 import uuid
@@ -170,7 +169,7 @@ class Command(BaseCommand):
 
         self.stdout.write("🏷 Теги…")
         for t in TAGS:
-            Tag.objects.get_or_create(name=t, defaults={"slug": slugify(t, allow_unicode=True)})
+            Tag.objects.get_or_create(name=t, defaults={"slug": unique_slug(t, Tag.objects)})
 
         self.stdout.write("⚙️  Характеристики и опции…")
         attr_map = {}
@@ -182,7 +181,7 @@ class Command(BaseCommand):
                     "is_multiselect": mult,
                     "show_in_filter": True,
                     "filter_order": idx,
-                    "slug": slugify(attr_name, allow_unicode=True),
+                    "slug":unique_slug(attr_name, ProductAttribute.objects),
                 },
             )
             # если уже существовала — аккуратно обновим стиль

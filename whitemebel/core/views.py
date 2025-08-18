@@ -1,14 +1,14 @@
 # core/views.py
 from django.shortcuts import get_object_or_404
-from rest_framework import viewsets, filters
+from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
-
+from django.db.models import Case, When, IntegerField
 from rest_framework.response import Response
 from django_filters import rest_framework as dj_filters
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
 
 from core.models import Category, ProductAttribute
-from core.serializers import CategoryBriefSerializer, CategoryNodeSerializer, ProductDetailSerializer, ProductListSerializer
+from core.serializers import CategoryBriefSerializer, CategoryNodeSerializer, ProductDetailSerializer, ProductListSerializer,ProductsByIdsResponseSerializer
 from core.serializers import FiltersResponseSerializer
 from django.db.models import Count, Min, Max, Q
 from rest_framework.views import APIView
@@ -679,3 +679,106 @@ class DeliveryRegionQuoteView(APIView):
     
 
 
+
+
+def _parse_ids_from_query(qs_param):
+    if not qs_param:
+        return []
+    parts = str(qs_param).replace(" ", "").split(",")
+    out = []
+    for p in parts:
+        if not p: 
+            continue
+        try:
+            out.append(int(p))
+        except ValueError:
+            continue
+    return out
+
+def _normalize_ids(payload):
+    # payload может быть строкой "1,2,3" или list/tuple
+    if payload is None:
+        return []
+    if isinstance(payload, (list, tuple)):
+        out = []
+        for x in payload:
+            try: out.append(int(x))
+            except (TypeError, ValueError): pass
+        return out
+    return _parse_ids_from_query(payload)
+
+class ProductsByIdsView(APIView):
+    """
+    GET  /api/products/by-ids/?ids=1,2,3&active=1
+    POST /api/products/by-ids/  {"ids":[1,2,3], "active":1}
+    Возвращает товары в том же порядке, что пришли id.
+    """
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("ids", OpenApiTypes.STR, OpenApiParameter.QUERY,
+                             description="CSV id, пример: 12,5,9 (для GET)"),
+            OpenApiParameter("active", OpenApiTypes.INT, OpenApiParameter.QUERY,
+                             description="1 — только активные (по умолчанию), 0 — только неактивные, пусто — все"),
+        ],
+        request={
+            "application/json": {
+                "type": "object",
+                "properties": {
+                    "ids": {"type": "array", "items": {"type": "integer"}},
+                    "active": {"type": "integer", "enum": [0,1]},
+                },
+                "required": ["ids"]
+            }
+        },
+        responses=ProductsByIdsResponseSerializer,
+        summary="Получить товары по массиву id (с сохранением порядка)",
+    )
+    def get(self, request):
+        ids = _parse_ids_from_query(request.query_params.get("ids"))
+        active = _b(request.query_params.get("active"), True)
+        return self._respond(request, ids, active)
+
+    def post(self, request):
+        data = request.data or {}
+        ids = _normalize_ids(data.get("ids"))
+        active = _b(data.get("active"), True)
+        return self._respond(request, ids, active)
+
+    def _respond(self, request, ids, active):
+        if not ids:
+            return Response({"detail": "ids пустой."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # ограничим чтобы не убить БД
+        if len(ids) > 500:
+            return Response({"detail": "Слишком много id (макс 500)."}, status=413)
+
+        # убираем точные дубли, но порядок первых вхождений сохраняем
+        seen = set()
+        ordered_ids = []
+        for i in ids:
+            if i not in seen:
+                seen.add(i)
+                ordered_ids.append(i)
+
+        qs = Product.objects.filter(id__in=ordered_ids)\
+            .select_related("color", "category")\
+            .prefetch_related("tags")
+
+        if active is True:
+            qs = qs.filter(is_active=True)
+        elif active is False:
+            qs = qs.filter(is_active=False)
+
+        # Сохранить порядок как в ordered_ids
+        order_case = Case(
+            *[When(id=pk, then=pos) for pos, pk in enumerate(ordered_ids)],
+            output_field=IntegerField(),
+        )
+        qs = qs.order_by(order_case, "id")
+
+        found_ids = set(qs.values_list("id", flat=True))
+        missing = [pk for pk in ordered_ids if pk not in found_ids]
+
+        ser = ProductListSerializer(qs, many=True, context={"request": request})
+        payload = {"results": ser.data, "missing": missing}
+        return Response(payload)
