@@ -99,7 +99,8 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 
-
+def _to_float(x):
+    return float(x) if x is not None else None
 
 
 
@@ -175,14 +176,14 @@ class FiltersView(APIView):
             height_min=Min("height"),height_max=Max("height"),
             depth_min=Min("depth"),  depth_max=Max("depth"),
         )
+
         ranges = {
-            "price":  {"min": agg["price_min"],  "max": agg["price_max"]},
-            "width":  {"min": agg["width_min"],  "max": agg["width_max"]},
-            "height": {"min": agg["height_min"], "max": agg["height_max"]},
-            "depth":  {"min": agg["depth_min"],  "max": agg["depth_max"]},
+            "price":  {"title": "Цена",    "min": _to_float(agg["price_min"]),  "max": _to_float(agg["price_max"])},
+            "width":  {"title": "Ширина",  "min": _to_float(agg["width_min"]),  "max": _to_float(agg["width_max"])},
+            "height": {"title": "Высота",  "min": _to_float(agg["height_min"]), "max": _to_float(agg["height_max"])},
+            "depth":  {"title": "Глубина", "min": _to_float(agg["depth_min"]),  "max": _to_float(agg["depth_max"])},
         }
 
-        # цвета
         color_rows = (
             base_qs.exclude(color__isnull=True)
                    .values("color", "color__name", "color__hex_code")
@@ -190,11 +191,16 @@ class FiltersView(APIView):
                    .order_by("color__name")
         )
         colors = [
-            {"id": r["color"], "name": r["color__name"], "hex_code": r["color__hex_code"], "count": r["count"]}
+            {
+                "id": r["color"],
+                "name": r["color__name"],
+                "title": r["color__name"],            # <- добавили
+                "hex_code": r["color__hex_code"],
+                "count": r["count"],
+            }
             for r in color_rows
         ]
 
-        # теги
         tag_rows = (
             base_qs.values("tags__id", "tags__name", "tags__slug")
                    .exclude(tags__id__isnull=True)
@@ -202,12 +208,16 @@ class FiltersView(APIView):
                    .order_by("tags__name")
         )
         tags = [
-            {"id": r["tags__id"], "name": r["tags__name"], "slug": r["tags__slug"], "count": r["count"]}
+            {
+                "id": r["tags__id"],
+                "name": r["tags__name"],
+                "title": r["tags__name"],             # <- добавили
+                "slug": r["tags__slug"],
+                "count": r["count"],
+            }
             for r in tag_rows
         ]
 
-        # атрибуты и их опции
-        # одна выборка по опциям с count, дальше группируем в питоне
         opt_rows = (
             AttributeOption.objects.filter(
                 attribute__show_in_filter=True,
@@ -227,7 +237,6 @@ class FiltersView(APIView):
             .order_by("attribute__filter_order", "attribute__name", "value")
         )
 
-        # группируем
         attr_map = {}
         for r in opt_rows:
             aid = r["attribute_id"]
@@ -235,6 +244,7 @@ class FiltersView(APIView):
                 attr_map[aid] = {
                     "id": aid,
                     "name": r["attribute__name"],
+                    "title": r["attribute__name"],      # <- добавили
                     "slug": r["attribute__slug"],
                     "filter_widget": r["attribute__filter_widget"],
                     "is_multiselect": r["attribute__is_multiselect"],
@@ -244,6 +254,7 @@ class FiltersView(APIView):
             attr_map[aid]["options"].append({
                 "id": r["id"],
                 "value": r["value"],
+                "title": r["value"],                  # <- добавили
                 "count": r["count"],
             })
 
@@ -257,11 +268,15 @@ class FiltersView(APIView):
             "colors": colors,
             "tags": tags,
             "attributes": attributes,
+            # заголовки блоков (по желанию фронта)
+            "titles": {
+                "colors": "Цвет",
+                "tags": "Теги",
+                "attributes": "Характеристики",
+            },
         }
 
-        # для схематайзера
-        resp = FiltersResponseSerializer(payload).data
-        return Response(resp)
+        return Response(FiltersResponseSerializer(payload).data)
 
 
 
