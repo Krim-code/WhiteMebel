@@ -42,44 +42,57 @@ class CategoryNodeSerializer(CategoryBriefSerializer):
 
 
 class RangeSerializer(serializers.Serializer):
-    min = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True)
-    max = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True)
+    title = serializers.CharField()
+    min = serializers.FloatField(allow_null=True)
+    max = serializers.FloatField(allow_null=True)
 
-class FilterColorSerializer(serializers.Serializer):
+class ColorFacetItemSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     name = serializers.CharField()
+    title = serializers.CharField()
     hex_code = serializers.CharField()
     count = serializers.IntegerField()
 
-class FilterTagSerializer(serializers.Serializer):
+class TagFacetItemSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     name = serializers.CharField()
-    slug = serializers.CharField()
+    title = serializers.CharField()
+    slug = serializers.SlugField()
     count = serializers.IntegerField()
 
-class FilterOptionSerializer(serializers.Serializer):
+class AttributeOptionFacetSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     value = serializers.CharField()
+    title = serializers.CharField()
     count = serializers.IntegerField()
 
-class AttributeFilterSerializer(serializers.Serializer):
+class AttributeFacetSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     name = serializers.CharField()
-    slug = serializers.CharField()
+    title = serializers.CharField()
+    slug = serializers.SlugField()
     filter_widget = serializers.CharField()
     is_multiselect = serializers.BooleanField()
     filter_order = serializers.IntegerField()
-    options = FilterOptionSerializer(many=True)
+    options = AttributeOptionFacetSerializer(many=True)
 
 class FiltersResponseSerializer(serializers.Serializer):
     category = serializers.CharField(allow_null=True)
     include_descendants = serializers.BooleanField()
     total_products = serializers.IntegerField()
-    ranges = serializers.DictField(child=RangeSerializer())
-    colors = FilterColorSerializer(many=True)
-    tags = FilterTagSerializer(many=True)
-    attributes = AttributeFilterSerializer(many=True)
 
+    # ключи: price/width/height/depth
+    ranges = serializers.DictField(child=RangeSerializer())
+
+    colors = ColorFacetItemSerializer(many=True)
+    tags = TagFacetItemSerializer(many=True)
+    attributes = AttributeFacetSerializer(many=True)
+
+    # заголовки блоков (опционально, для удобства фронта)
+    titles = serializers.DictField(
+        child=serializers.CharField(),
+        required=False
+    )
 
 
 
