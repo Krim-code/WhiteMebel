@@ -80,19 +80,12 @@ class FiltersResponseSerializer(serializers.Serializer):
     category = serializers.CharField(allow_null=True)
     include_descendants = serializers.BooleanField()
     total_products = serializers.IntegerField()
-
-    # ключи: price/width/height/depth
     ranges = serializers.DictField(child=RangeSerializer())
-
     colors = ColorFacetItemSerializer(many=True)
     tags = TagFacetItemSerializer(many=True)
-    attributes = AttributeFacetSerializer(many=True)
-
-    # заголовки блоков (опционально, для удобства фронта)
-    titles = serializers.DictField(
-        child=serializers.CharField(),
-        required=False
-    )
+    # было: attributes = AttributeFacetSerializer(many=True)
+    attributes = serializers.DictField(child=AttributeFacetSerializer())
+    titles = serializers.DictField(child=serializers.CharField(), required=False)
 
 
 
