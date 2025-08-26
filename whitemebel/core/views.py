@@ -6,6 +6,7 @@ from django.db.models import Case, When, IntegerField
 from rest_framework.response import Response
 from django_filters import rest_framework as dj_filters
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
+from collections import OrderedDict
 
 from core.models import Category, ProductAttribute
 from core.serializers import CategoryBriefSerializer, CategoryNodeSerializer, ProductDetailSerializer, ProductListSerializer,ProductsByIdsResponseSerializer
@@ -237,38 +238,48 @@ class FiltersView(APIView):
             .order_by("attribute__filter_order", "attribute__name", "value")
         )
 
-        attr_map = {}
+        # ключ — slug
+        attr_by_slug = {}
         for r in opt_rows:
-            aid = r["attribute_id"]
-            if aid not in attr_map:
-                attr_map[aid] = {
-                    "id": aid,
+            slug = r["attribute__slug"]
+            if slug not in attr_by_slug:
+                attr_by_slug[slug] = {
+                    "id": r["attribute_id"],
                     "name": r["attribute__name"],
-                    "title": r["attribute__name"],      # <- добавили
-                    "slug": r["attribute__slug"],
+                    "title": r["attribute__name"],
+                    "slug": slug,
                     "filter_widget": r["attribute__filter_widget"],
                     "is_multiselect": r["attribute__is_multiselect"],
                     "filter_order": r["attribute__filter_order"],
                     "options": [],
                 }
-            attr_map[aid]["options"].append({
+            attr_by_slug[slug]["options"].append({
                 "id": r["id"],
                 "value": r["value"],
-                "title": r["value"],                  # <- добавили
+                "title": r["value"],
                 "count": r["count"],
             })
 
-        attributes = sorted(attr_map.values(), key=lambda x: (x["filter_order"], x["name"]))
+        # чтобы фронт получал предсказуемый порядок — отсортируем слуги по порядку фильтра, но вернём dict
+        ordered_slugs = sorted(
+            attr_by_slug.keys(),
+            key=lambda s: (attr_by_slug[s]["filter_order"], attr_by_slug[s]["name"])
+        )
+        attributes_obj = OrderedDict((s, attr_by_slug[s]) for s in ordered_slugs)
 
         payload = {
             "category": cat.slug if cat else None,
             "include_descendants": bool(include_desc),
             "total_products": total_products,
-            "ranges": ranges,
+            "ranges": {
+                "price":  {"title": "Цена",         "min": _to_float(agg["price_min"]),  "max": _to_float(agg["price_max"])},
+                "width":  {"title": "Ширина (см)",  "min": _to_float(agg["width_min"]),  "max": _to_float(agg["width_max"])},
+                "height": {"title": "Высота (см)",  "min": _to_float(agg["height_min"]), "max": _to_float(agg["height_max"])},
+                "depth":  {"title": "Глубина (см)", "min": _to_float(agg["depth_min"]),  "max": _to_float(agg["depth_max"])},
+            },
             "colors": colors,
             "tags": tags,
-            "attributes": attributes,
-            # заголовки блоков (по желанию фронта)
+            "attributes": attributes_obj,   # <-- теперь объект
             "titles": {
                 "colors": "Цвет",
                 "tags": "Теги",
