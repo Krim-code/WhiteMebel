@@ -69,9 +69,10 @@ class ProductAdmin(admin.ModelAdmin):
 
 @admin.register(Tag)
 class TagAdmin(admin.ModelAdmin):
-    list_display = ("name", "slug")
-    search_fields = ("name",)
-    prepopulated_fields = {"slug": ("name",)}
+    list_display = ("id", "name", "slug", "show_on_home")
+    list_editable = ("show_on_home",)
+    search_fields = ("name", "slug")
+    list_filter = ("show_on_home",)
 
 
 class AttributeOptionInline(admin.TabularInline):

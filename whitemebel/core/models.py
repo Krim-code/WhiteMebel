@@ -85,6 +85,7 @@ class Color(models.Model):
 class Tag(models.Model):
     name = models.CharField("Название тега", max_length=100, unique=True)
     slug = models.SlugField("Слаг", max_length=100, unique=True)
+    show_on_home = models.BooleanField("Показывать на главной", default=False, db_index=True)  # <—
 
     def __str__(self):
         return self.name

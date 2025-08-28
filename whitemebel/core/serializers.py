@@ -105,7 +105,14 @@ class ProductListSerializer(serializers.ModelSerializer):
             "category", "category_slug",
             "created_at",
         )
-        
+
+
+class TagSerializer(serializers.ModelSerializer):
+    product_count = serializers.IntegerField(read_only=True, required=False)
+
+    class Meta:
+        model = Tag
+        fields = ("id", "name", "slug", "show_on_home", "product_count")
 
 # core/serializers.py
 
@@ -201,21 +208,18 @@ class ProductDetailSerializer(serializers.ModelSerializer):
 
     def get_related_products(self, obj):
         limit = self._limit("related_limit", 8)
-        qs = obj.related_products.filter(is_active=True).select_related("color").only(
-            "id", "title", "slug", "price", "discount_price", "image", "color_id"
-        )
+        qs = obj.related_products.all()
         if limit:
             qs = qs[:limit]
-        return RelatedProductSerializer(qs, many=True, context=self.context).data
+        # карточки ТОЧНО как в /api/products
+        return ProductListSerializer(qs, many=True, context=self.context).data
 
     def get_related_by_color(self, obj):
         limit = self._limit("related_by_color_limit", 8)
-        qs = obj.related_by_color.filter(is_active=True).select_related("color").only(
-            "id", "title", "slug", "price", "discount_price", "image", "color_id"
-        )
+        qs = obj.related_by_color.all()
         if limit:
             qs = qs[:limit]
-        return RelatedProductSerializer(qs, many=True, context=self.context).data
+        return ProductListSerializer(qs, many=True, context=self.context).data
     
     # core/serializers.py (добавь в конец рядом с ProductListSerializer)
 class ProductListPageSerializer(serializers.Serializer):

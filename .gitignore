@@ -1,3 +1,6 @@
 /whitemebel/media
 /whitemebel/static
 .env
+venv
+*.sqlite3
+__pycache__

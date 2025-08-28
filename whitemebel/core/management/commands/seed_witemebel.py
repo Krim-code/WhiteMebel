@@ -168,8 +168,35 @@ class Command(BaseCommand):
             Color.objects.get_or_create(name=name, defaults={"hex_code": hx})
 
         self.stdout.write("🏷 Теги…")
+        HOME_TAGS = {"новинка", "хит"}
         for t in TAGS:
-            Tag.objects.get_or_create(name=t, defaults={"slug": unique_slug(t, Tag.objects)})
+            # первичный slug-кандидат (ASCII + уникальность против всей таблицы)
+            slug_candidate = unique_slug(t, Tag.objects)
+
+            tag, created = Tag.objects.get_or_create(
+                name=t,
+                defaults={
+                    "slug": slug_candidate,
+                    "show_on_home": (t in HOME_TAGS),
+                },
+            )
+            if not created:
+                # лечим пустые/кириллические/левые слаги у уже существующих тегов
+                # важное: исключаем сам объект из выборки, чтобы не словить конфликт уникальности
+                fixed_slug = unique_slug(tag.name, Tag.objects.exclude(pk=tag.pk))
+                updates = []
+
+                if not tag.slug or tag.slug != fixed_slug:
+                    tag.slug = fixed_slug
+                    updates.append("slug")
+
+                # если флаг ещё не трогали — можно расставить дефолты (или пропусти, если не надо)
+                if tag.show_on_home is None:  # на случай если в БД NULL
+                    tag.show_on_home = (tag.name in HOME_TAGS)
+                    updates.append("show_on_home")
+
+                if updates:
+                    tag.save(update_fields=updates)
 
         self.stdout.write("⚙️  Характеристики и опции…")
         attr_map = {}
