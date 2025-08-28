@@ -2,16 +2,15 @@
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
-from django.db.models import Case, When, IntegerField
+from django.db.models import Case, When, IntegerField, Count, Min, Max, Q, Value ,Prefetch
 from rest_framework.response import Response
 from django_filters import rest_framework as dj_filters
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
 from collections import OrderedDict
 
-from core.models import Category, ProductAttribute
-from core.serializers import CategoryBriefSerializer, CategoryNodeSerializer, ProductDetailSerializer, ProductListSerializer,ProductsByIdsResponseSerializer
+from core.models import Category, ProductAttribute, Tag
+from core.serializers import CategoryBriefSerializer, CategoryCrumbSerializer, CategoryNodeSerializer, ProductDetailSerializer, ProductListSerializer,ProductsByIdsResponseSerializer, TagSerializer
 from core.serializers import FiltersResponseSerializer
-from django.db.models import Count, Min, Max, Q
 from rest_framework.views import APIView
 from rest_framework.exceptions import NotFound
 
@@ -349,6 +348,7 @@ class ProductListView(APIView):
     )
     def get(self, request):
         qs = Product.objects.all().select_related("color", "category").prefetch_related("tags")
+
         # базовые флаги
         only_active = _b(request.query_params.get("active"), True)
         only_in_stock = _b(request.query_params.get("in_stock"), None)
@@ -364,6 +364,7 @@ class ProductListView(APIView):
         # категория
         category_slug = request.query_params.get("category")
         deep = _b(request.query_params.get("deep"), True)
+        cat = None                                   # <-- добавили
         if category_slug:
             try:
                 cat = Category.objects.get(slug=category_slug)
@@ -403,10 +404,9 @@ class ProductListView(APIView):
         if tag_slugs:
             qs = qs.filter(tags__slug__in=tag_slugs).distinct()
 
-        # атрибуты: формат attr_<slug>=1,2
+        # атрибуты
         attr_params = {k: v for k, v in request.query_params.items() if k.startswith("attr_")}
         if attr_params:
-            # получаем мапу slug -> id атрибута (для надёжности)
             slug_to_id = dict(ProductAttribute.objects.values_list("slug", "id"))
             for key, value in attr_params.items():
                 slug = key[5:]
@@ -416,7 +416,6 @@ class ProductListView(APIView):
                 attr_id = slug_to_id.get(slug)
                 if not attr_id:
                     continue
-                # AND по разным атрибутам, OR внутри одного
                 qs = qs.filter(
                     attributes__attribute_id=attr_id,
                     attributes__option_id__in=option_ids
@@ -429,17 +428,25 @@ class ProductListView(APIView):
             ordering = "-created_at"
         qs = qs.order_by(ordering, "id")
 
-        # считаем фасеты ПОСЛЕ применения фильтров (классика e-commerce)
+        # фасеты (после фильтров)
         facets = compute_filters(qs)
+
+        # хлебные крошки по выбранной категории
+        breadcrumbs = []
+        if cat:
+            nodes = cat.get_ancestors(include_self=True)
+            breadcrumbs = CategoryCrumbSerializer(nodes, many=True).data
 
         # пагинация
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(qs, request)
         data = ProductListSerializer(page, many=True, context={"request": request}).data
 
+        # добавили breadcrumbs в payload
         return paginator.get_paginated_response({
             "results": data,
             "filters": facets,
+            "breadcrumbs": breadcrumbs,
         })
         
         
@@ -462,7 +469,13 @@ class ProductDetailView(APIView):
         related_limit = int(request.query_params.get("related_limit", 8))
         related_by_color_limit = int(request.query_params.get("related_by_color_limit", 8))
 
-        # базовый queryset
+        # queryset для карточек, как в листинге
+        rel_card_qs = (
+            Product.objects.filter(is_active=True)
+            .select_related("color", "category")
+            .prefetch_related("tags")
+        )
+
         qs = (
             Product.objects.filter(is_active=True, slug=slug)
             .select_related("color", "category")
@@ -471,14 +484,13 @@ class ProductDetailView(APIView):
                 "images",
                 "attributes__attribute",
                 "attributes__option",
+                # related блоки — сразу карточными данными
+                *( [
+                    Prefetch("related_products", queryset=rel_card_qs),
+                    Prefetch("related_by_color", queryset=rel_card_qs),
+                ] if include_related else [] )
             )
         )
-        # подтянем потенциально связанные заранее (экономим запросы)
-        if include_related:
-            qs = qs.prefetch_related(
-                "related_products__color",
-                "related_by_color__color",
-            )
 
         obj = get_object_or_404(qs)
 
@@ -808,3 +820,51 @@ class ProductsByIdsView(APIView):
         ser = ProductListSerializer(qs, many=True, context={"request": request})
         payload = {"results": ser.data, "missing": missing}
         return Response(payload)
+    
+    
+
+class TagListView(APIView):
+    """
+    GET /api/tags/?home=1&with_counts=1&q=хит&limit=50
+    """
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("home", OpenApiTypes.INT, OpenApiParameter.QUERY,
+                             description="1 — только show_on_home, 0 — только не-home, пусто — все"),
+            OpenApiParameter("with_counts", OpenApiTypes.INT, OpenApiParameter.QUERY,
+                             description="1 — добавить product_count"),
+            OpenApiParameter("q", OpenApiTypes.STR, OpenApiParameter.QUERY,
+                             description="поиск по name/slug"),
+            OpenApiParameter("limit", OpenApiTypes.INT, OpenApiParameter.QUERY,
+                             description="ограничить кол-во (1..500, по умолчанию 100)"),
+        ],
+        responses=TagSerializer(many=True),
+        summary="Список тегов (с фильтром по show_on_home и опциональным количеством товаров)",
+    )
+    def get(self, request):
+        qs = Tag.objects.all()
+
+        home = _b(request.query_params.get("home"), None)
+        if home is True:
+            qs = qs.filter(show_on_home=True)
+        elif home is False:
+            qs = qs.filter(show_on_home=False)
+
+        q = request.query_params.get("q")
+        if q:
+            qs = qs.filter(Q(name__icontains=q) | Q(slug__icontains=q))
+
+        with_counts = _b(request.query_params.get("with_counts"), False)
+        if with_counts:
+            qs = qs.annotate(product_count=Count("products", distinct=True))
+        else:
+            qs = qs.annotate(product_count=Value(0, output_field=IntegerField()))
+
+        try:
+            limit = int(request.query_params.get("limit", 100))
+        except ValueError:
+            limit = 100
+        limit = max(1, min(limit, 500))
+
+        qs = qs.order_by("name")[:limit]
+        return Response(TagSerializer(qs, many=True).data)
