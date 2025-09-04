@@ -1,4 +1,3 @@
-# docker-compose.yml
 services:
   db:
     image: postgres:16-alpine
@@ -33,10 +32,29 @@ services:
       - static_data:/app/staticfiles
       - media_data:/app/media
 
+      
+  nuxt:
+    container_name: nuxt-app
+    build: ./krim-shop
+    # наружу порт не пробрасываем — идём через nginx
+    # ports:
+    #   - "3000:3000"
+    environment:
+      NODE_ENV: production
+    restart: unless-stopped
+    # для продакшна обычно МАУНТЫ НЕ НУЖНЫ.
+    # если правда надо — оставь, но лучше собрать образ без них:
+    # volumes:
+    #   - .:/app
+    # #   - /app/node_modules
+    # ports:
+    #   - "3000:3000"
+
   nginx:
     image: nginx:alpine
     depends_on:
       - web
+      - nuxt
     ports:
       - "80:80"
     volumes:
