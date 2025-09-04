@@ -17,6 +17,48 @@ from core.models import (
     Collection, Service, MainSlider,
     DeliveryRegion, DeliveryDiscount
 )
+from config import settings
+
+DEFAULT_IMAGES_DIR = Path(getattr(settings, "BASE_DIR", Path.cwd())) / "seed_images"
+EXTS = [".jpg", ".jpeg", ".png", ".webp"]
+
+def _placeholder_bytes(text="WhiteMebel"):
+    img = Image.new("RGB", (1200, 800), (242, 242, 242))
+    d = ImageDraw.Draw(img)
+    d.rectangle([(10, 10), (1190, 790)], outline=(40, 40, 40), width=3)
+    d.text((40, 40), text, fill=(30, 30, 30))
+    buf = BytesIO()
+    img.save(buf, format="JPEG", quality=85)
+    return buf.getvalue()
+
+PLACEHOLDER = _placeholder_bytes()
+
+def _content_file_from_path(path: Path, *, fallback_name: str) -> ContentFile:
+    """Грузим файл с диска. Если нет — плейсхолдер."""
+    if path and path.exists() and path.is_file():
+        return ContentFile(path.read_bytes(), name=path.name)
+    return ContentFile(PLACEHOLDER, name=fallback_name)
+
+def _find_first(basename_no_ext: str, base_dir: Path) -> Path | None:
+    for ext in EXTS:
+        p = base_dir / f"{basename_no_ext}{ext}"
+        if p.exists():
+            return p
+    return None
+
+def slide_cf(idx: int, slides_dir: Path | None = None) -> ContentFile:
+    """slide1/slide2/slide3.*"""
+    base = slides_dir or DEFAULT_IMAGES_DIR
+    found = _find_first(f"hero-{idx}", base)
+    return _content_file_from_path(found, fallback_name=f"hero_{idx}.jpg")
+
+def product_cf(product_dir: Path | None = None) -> ContentFile:
+    """product.* — единая картинка для всех товаров"""
+    base = product_dir or DEFAULT_IMAGES_DIR
+    found = _find_first("shkaf", base)
+    return _content_file_from_path(found, fallback_name="shkaf.jpg")
+
+# =========================================
 
 fake = Faker("ru_RU")
 
@@ -119,12 +161,22 @@ class Command(BaseCommand):
     help = "Генерит тестовые данные для WhiteMebel (категории, товары, атрибуты, слайдеры и т.д.)"
 
     def add_arguments(self, parser):
-        parser.add_argument("--products", type=int, default=150, help="Сколько товаров создать (100-200 ок)")
-        parser.add_argument("--fresh", action="store_true", help="Очистить ключевые таблицы перед генерацией")
+        parser.add_argument("--products", type=int, default=150)
+        parser.add_argument("--fresh", action="store_true")
+        parser.add_argument("--slides-dir", type=str, help="Папка со слайдами slide1/2/3.*")
+        parser.add_argument("--product-image", type=str, help="Путь к картинке товара (product.*)")
 
     def handle(self, *args, **opts):
         products_count = max(1, int(opts["products"]))
         fresh = opts["fresh"]
+
+        slides_dir = Path(opts["slides_dir"]).resolve() if opts.get("slides_dir") else None
+        product_img_path = Path(opts["product_image"]).resolve() if opts.get("product_image") else None
+        # если передали конкретный файл — завернём в функцию-обёртку
+        def product_image_cf():
+            if product_img_path and product_img_path.exists():
+                return _content_file_from_path(product_img_path, fallback_name=product_img_path.name)
+            return product_cf()  # из seed_images/product.*
 
         if fresh:
             self.stdout.write("💣 Чищу данные…")
@@ -260,12 +312,12 @@ class Command(BaseCommand):
             )
 
         self.stdout.write("🖼 Слайдер…")
-        for i in range(3):
+        for i in range(1, 4):
             MainSlider.objects.create(
-                title=f"Слайд {i+1}",
-                image=cf(f"slide_{i+1}.jpg"),
+                title=f"Слайд {i}",
+                image=slide_cf(i, slides_dir),
                 link="",
-                order=i,
+                order=i-1,
                 is_active=True,
             )
 
@@ -300,7 +352,7 @@ class Command(BaseCommand):
                 color=color,
                 category=cat,
             )
-            p.image = cf(f"{p_slug}.jpg")
+            p.image = product_image_cf()
             p.save()
             created_products.append(p)
             
