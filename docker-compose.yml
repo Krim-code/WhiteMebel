@@ -74,5 +74,6 @@ services:
 
 volumes:
   pg_data:
+    name: whitemebel_pg_data
   static_data:
   media_data:
