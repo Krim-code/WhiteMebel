@@ -15,7 +15,7 @@
       widget.pay('charge', {
           publicId: "{{ public_id }}",
           description: "{{ description|escapejs }}",
-          amount: {{ amount|floatformat:2 }},
+          amount: {{ amount_minor }} / 100,
           currency: "{{ currency }}",
           accountId: "{{ account_id|escapejs }}",
           invoiceId: "{{ order.id }}",              // связываем платёж с заказом

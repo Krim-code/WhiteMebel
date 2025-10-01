@@ -9,7 +9,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
 from collections import OrderedDict
 from django.views.generic import TemplateView
 from core.models import Category, ProductAttribute, Tag
-from core.serializers import CategoryBriefSerializer, CategoryCrumbSerializer, CategoryNodeSerializer, ProductDetailSerializer, ProductListSerializer,ProductsByIdsResponseSerializer, ServiceListSerializer, TagSerializer
+from core.serializers import CategoryBriefSerializer, CategoryCrumbSerializer, CategoryNodeSerializer, CloudPaymentsWebhookIn, CloudPaymentsWebhookOut, ProductDetailSerializer, ProductListSerializer,ProductsByIdsResponseSerializer, ServiceListSerializer, TagSerializer
 from core.serializers import FiltersResponseSerializer
 from rest_framework.views import APIView
 from rest_framework.exceptions import NotFound
@@ -20,6 +20,7 @@ from core.utils.filters import compute_filters
 from rest_framework import permissions
 from core.models import MainSlider
 from core.serializers import MainSliderSerializer
+from decimal import Decimal, ROUND_HALF_UP
 
 from decimal import Decimal
 from core.models import DeliveryRegion, DeliveryDiscount
@@ -1014,10 +1015,13 @@ class CloudPaymentsPayView(TemplateView):
         fail_url    = request.build_absolute_uri(f"/api/payments/fail/?order_id={order.id}")
         status_api  = request.build_absolute_uri(f"/api/orders/{order.id}/status/")
 
+        # сумма в копейках (int)
+        amount_minor = int((order.total_price * Decimal('100')).quantize(0, ROUND_HALF_UP))
+
         ctx.update({
             "order": order,
             "public_id": settings.CLOUDPAYMENTS_PUBLIC_ID,
-            "amount": float(order.total_price),
+            "amount_minor": amount_minor,          # <–– копейки
             "currency": "RUB",
             "account_id": order.email or order.phone or f"user-{order.id}",
             "description": f"Оплата заказа #{order.id} на WhiteMebel",
@@ -1103,85 +1107,136 @@ def _verify_cp_hmac(raw_body: bytes, header_value: str, secret: str) -> bool:
     return hmac.compare_digest(expected, header_value)
 
 
+def _to_minor_units(value) -> int:
+    """Приводит сумму к целым копейкам (int), без проблем float."""
+    return int((Decimal(str(value)) * Decimal("100")).quantize(0, ROUND_HALF_UP))
+
+
+# ---------- Сериалайзеры только для схемы Swagger ----------
+
 class CloudPaymentsWebhookView(APIView):
+    """
+    Webhook CloudPayments: Check/Pay/Fail/Refund/Confirm/Cancel
+    Возвращает HTTP 200 и JSON {"code": <int>} во всех случаях.
+    """
     authentication_classes = []
     permission_classes = []
 
-    # CloudPayments требует HTTP 200 с JSON {'code':0} для успеха
     def _ok(self, message="OK"):
         return Response({"code": 0, "message": message})
 
-    def _err(self, message="Error", code=13):
-        # 13 — generic decline
+    def _decline(self, message="Decline", code=13):
+        # 11 — invalid amount; 12 — invalid request; 13 — decline
         return Response({"code": code, "message": message})
 
     @extend_schema(
         summary="CloudPayments webhook",
-        description="Обрабатывает уведомления: Check, Pay, Fail, Refund, Confirm. Подписано через Content-HMAC.",
-        responses=None,
+        description=(
+            "Обрабатывает уведомления CloudPayments. "
+            "Проверяет подпись Content-HMAC, сверяет сумму/валюту в 'Check', "
+            "устанавливает статусы заказа в 'Pay/Fail/Refund/Confirm/Cancel'."
+        ),
+        request=CloudPaymentsWebhookIn,
+        responses={200: CloudPaymentsWebhookOut},
+        examples=[
+            OpenApiExample(
+                "Pay example",
+                value={
+                    "NotificationType": "Pay",
+                    "Amount": 1234.56,
+                    "Currency": "RUB",
+                    "InvoiceId": "42",
+                    "TransactionId": "T123456",
+                    "Data": {"order_id": 42}
+                },
+            )
+        ],
     )
     def post(self, request):
         raw = request.body or b""
-        h = request.META.get("HTTP_CONTENT_HMAC", "")
-        if not _verify_cp_hmac(raw, h, settings.CLOUDPAYMENTS_API_SECRET):
-            return self._err("Bad signature", code=12)
+        header_hmac = request.META.get("HTTP_CONTENT_HMAC", "")
 
+        # ВАЖНО: используем правильный секрет (не public_id)
+        secret = getattr(settings, "CLOUDPAYMENTS_SECRET", None) or getattr(settings, "CLOUDPAYMENTS_API_SECRET", None)
+        if not secret or not _verify_cp_hmac(raw, header_hmac, secret):
+            return self._decline("Bad signature", code=12)
+
+        # Парсим JSON как есть (без .is_valid()), чтобы быть устойчивыми к кейсам полей
         try:
             payload = json.loads(raw.decode("utf-8"))
         except Exception:
-            return self._err("Bad JSON", code=12)
+            return self._decline("Bad JSON", code=12)
 
+        # Нормализуем имена полей
         ntype = (payload.get("NotificationType") or payload.get("notificationType") or "").lower()
+        amount = payload.get("Amount")
+        currency = (payload.get("Currency") or "").upper()
         invoice_id = payload.get("InvoiceId") or payload.get("InvoiceID")
         data = payload.get("Data") or {}
         order_id = data.get("order_id") or invoice_id
-        amount = Decimal(str(payload.get("Amount", "0")))
         transaction_id = payload.get("TransactionId") or payload.get("TransactionID")
 
         if not order_id:
-            return self._err("No order_id")
+            return self._decline("No order_id", code=12)
 
-        order = Order.objects.filter(pk=int(order_id)).first()
-        if not order:
-            return self._err("Order not found", code=12)
+        order = get_object_or_404(Order, pk=int(order_id))
 
-        # Check — провалидацию делаем тут: сумма, состояние, и т.д.
+        # Считаем суммы в копейках
+        try:
+            cp_minor = _to_minor_units(amount)
+        except Exception:
+            return self._decline("Bad amount", code=12)
+        order_minor = _to_minor_units(order.total_price)
+
+        # --- CHECK ---
         if ntype == "check":
-            # проверим сумму (на рубли не ругаемся на копейки)
-            if amount.quantize(Decimal("0.01")) != order.total_price.quantize(Decimal("0.01")):
-                return self._err("Amount mismatch", code=2)
+            if currency != "RUB":
+                return self._decline("Invalid currency", code=13)
+            if cp_minor != order_minor:
+                return self._decline("Invalid amount", code=11)
             if order.status in ("paid", "canceled"):
-                return self._err("Order already closed", code=13)
+                return self._decline("Order already closed", code=13)
             return self._ok("Check OK")
 
-        # Pay — деньги списаны. Фиксируем заказ.
+        # --- PAY ---
         if ntype == "pay":
-            order.status = "paid"
-            # если хочешь — сохрани transaction_id, paid_at
-            # order.transaction_id = transaction_id
-            order.save(update_fields=["status"])
+            # Доп. защита — ещё раз сверим
+            if currency != "RUB" or cp_minor != order_minor:
+                return self._decline("Invalid amount/currency", code=11)
+            if order.status != "paid":
+                order.status = "paid"
+                # при желании сохрани transaction_id/paid_at
+                order.save(update_fields=["status", "updated_at"])
             return self._ok("Pay OK")
 
-        # Fail — оплата не прошла
+        # --- FAIL ---
         if ntype == "fail":
-            # Не обязательно отменять заказ сразу, но логично
-            order.status = "canceled"
-            order.save(update_fields=["status"])
+            if order.status == "new":
+                order.status = "canceled"
+                order.save(update_fields=["status", "updated_at"])
             return self._ok("Fail OK")
 
-        # Refund — возврат средств
+        # --- REFUND ---
         if ntype == "refund":
             order.status = "canceled"
-            order.save(update_fields=["status"])
+            order.save(update_fields=["status", "updated_at"])
             return self._ok("Refund OK")
 
-        # Confirm — для двухстадийных (hold->capture). Если используешь charge — обычно не придёт.
+        # --- CONFIRM (двухстадийная оплата capture) ---
         if ntype == "confirm":
-            order.status = "paid"
-            order.save(update_fields=["status"])
+            if order.status != "paid":
+                order.status = "paid"
+                order.save(update_fields=["status", "updated_at"])
             return self._ok("Confirm OK")
 
-        # если что-то экзотическое
+        # --- CANCEL (двухстадийная отмена hold) ---
+        if ntype == "cancel":
+            if order.status != "canceled":
+                order.status = "canceled"
+                order.save(update_fields=["status", "updated_at"])
+            return self._ok("Cancel OK")
+
+        # Неизвестный/неинтересный тип — отвечаем 0, чтобы CP не ретраил
         return self._ok("Ignored")
 
 

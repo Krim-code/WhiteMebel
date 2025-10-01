@@ -758,3 +758,18 @@ class ServiceListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Service
         fields = ("id", "name", "price")
+        
+        
+class CloudPaymentsWebhookIn(serializers.Serializer):
+    NotificationType = serializers.CharField()
+    Amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+    Currency = serializers.CharField()
+    InvoiceId = serializers.CharField(required=False, allow_blank=True)
+    InvoiceID = serializers.CharField(required=False, allow_blank=True)
+    TransactionId = serializers.CharField(required=False, allow_blank=True)
+    TransactionID = serializers.CharField(required=False, allow_blank=True)
+    Data = serializers.DictField(required=False)
+
+class CloudPaymentsWebhookOut(serializers.Serializer):
+    code = serializers.IntegerField()
+    message = serializers.CharField()
