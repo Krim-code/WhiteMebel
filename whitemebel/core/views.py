@@ -1123,7 +1123,7 @@ class CloudPaymentsWebhookView(APIView):
     def post(self, request):
         raw = request.body or b""
         h = request.META.get("HTTP_CONTENT_HMAC", "")
-        if not _verify_cp_hmac(raw, h, settings.CLOUDPAYMENTS_SECRET):
+        if not _verify_cp_hmac(raw, h, settings.CLOUDPAYMENTS_API_SECRET):
             return self._err("Bad signature", code=12)
 
         try:
