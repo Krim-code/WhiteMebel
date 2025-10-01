@@ -1,0 +1,5 @@
+
+[submodule "krim-shop"]
+	path = krim-shop
+	url = https://github.com/ZiZIGY/krim-shop.git
+	branch = master
