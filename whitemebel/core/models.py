@@ -457,3 +457,58 @@ class DeliveryDiscount(models.Model):
 
         # Не уходим в минус
         return min(cost, max(Decimal("0.00"), amount))
+
+class ContactRequest(models.Model):
+    name = models.CharField("Имя", max_length=150)
+    phone = models.CharField("Телефон (+7XXXXXXXXXX)", max_length=16, db_index=True)
+    created_at = models.DateTimeField("Создано", auto_now_add=True)
+    processed = models.BooleanField("Обработано", default=False)
+
+    class Meta:
+        verbose_name = "Обращение"
+        verbose_name_plural = "Обращения"
+        ordering = ("-created_at",)
+
+    def __str__(self):
+        return f"{self.name} — {self.phone}"
+    
+    
+class Payment(models.Model):
+    class Status(models.TextChoices):
+        NEW = "new", "Новый"
+        PAID = "paid", "Оплачен"        # для charge
+        AUTHORIZED = "authorized", "Заблокирован"  # для auth, если пойдём в 2-стадийку
+        FAILED = "failed", "Ошибка"
+        REFUNDED = "refunded", "Возврат"
+        CANCELED = "canceled", "Отменён"
+
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="payments")
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    currency = models.CharField(max_length=3, default="RUB")
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.NEW)
+
+    # CloudPayments поля
+    transaction_id = models.CharField(max_length=64, blank=True)  # TransactionId
+    invoice_id = models.CharField(max_length=64, blank=True)      # InvoiceId (обычно str(order.id))
+    account_id = models.CharField(max_length=190, blank=True)     # email/phone/id пользователя
+
+    card_first_six = models.CharField(max_length=6, blank=True)
+    card_last_four = models.CharField(max_length=4, blank=True)
+    card_type = models.CharField(max_length=32, blank=True)
+
+    raw_payload = models.JSONField(default=dict, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["invoice_id"]),
+            models.Index(fields=["transaction_id"]),
+            models.Index(fields=["status"]),
+        ]
+        verbose_name = "Платёж"
+        verbose_name_plural = "Платежи"
+
+    def __str__(self):
+        return f"Payment #{self.id} for order #{self.order_id} [{self.status}]"

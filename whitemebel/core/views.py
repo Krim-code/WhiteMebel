@@ -7,13 +7,13 @@ from rest_framework.response import Response
 from django_filters import rest_framework as dj_filters
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
 from collections import OrderedDict
-
+from django.views.generic import TemplateView
 from core.models import Category, ProductAttribute, Tag
-from core.serializers import CategoryBriefSerializer, CategoryCrumbSerializer, CategoryNodeSerializer, ProductDetailSerializer, ProductListSerializer,ProductsByIdsResponseSerializer, TagSerializer
+from core.serializers import CategoryBriefSerializer, CategoryCrumbSerializer, CategoryNodeSerializer, ProductDetailSerializer, ProductListSerializer,ProductsByIdsResponseSerializer, ServiceListSerializer, TagSerializer
 from core.serializers import FiltersResponseSerializer
 from rest_framework.views import APIView
 from rest_framework.exceptions import NotFound
-
+from rest_framework.generics import ListAPIView
 from core.models import Product, AttributeOption
 from core.pagination import LimitPageNumberPagination
 from core.utils.filters import compute_filters
@@ -24,6 +24,26 @@ from core.serializers import MainSliderSerializer
 from decimal import Decimal
 from core.models import DeliveryRegion, DeliveryDiscount
 from core.serializers import DeliveryRegionCostSerializer
+from rest_framework.generics import CreateAPIView
+from drf_spectacular.utils import OpenApiExample
+from core.models import ContactRequest
+from core.serializers import ContactRequestCreateSerializer
+from core.serializers import OrderCreateSerializer
+from core.models import Order
+from rest_framework.permissions import AllowAny
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from django.conf import settings
+from django.db import transaction
+from .models import Payment, Service
+from .utils.cloudpayments import verify_cp_signature
+import base64, hashlib, hmac, json
+
+from django.urls import reverse
+from core.serializers import (
+    CloudPaymentsInitResponseSerializer,
+    OrderStatusResponseSerializer,
+)
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -868,3 +888,331 @@ class TagListView(APIView):
 
         qs = qs.order_by("name")[:limit]
         return Response(TagSerializer(qs, many=True).data)
+    
+
+
+class ContactRequestCreateView(CreateAPIView):
+    """POST /api/contact-requests/ — оставить телефон для звонка."""
+    serializer_class = ContactRequestCreateSerializer
+    queryset = ContactRequest.objects.all()
+
+    @extend_schema(
+        summary="Создать обращение (имя + телефон)",
+        request=ContactRequestCreateSerializer,
+        responses=ContactRequestCreateSerializer,
+        examples=[
+            OpenApiExample(
+                "Пример",
+                value={"name": "Иван", "phone": "+7 (999) 123-45-67"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Успешный ответ",
+                value={
+                    "id": 12,
+                    "name": "Иван",
+                    "phone": "+79991234567",
+                    "created_at": "2025-09-29T10:00:00Z"
+                },
+                response_only=True,
+            ),
+        ],
+    )
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)
+
+
+class OrderCreateView(CreateAPIView):
+    permission_classes = [AllowAny]
+    serializer_class = OrderCreateSerializer
+
+    @extend_schema(
+        summary="Оформление заказа",
+        tags=["orders"],
+        request=OrderCreateSerializer,
+        responses=OrderCreateSerializer,
+        examples=[
+            OpenApiExample(
+                "Пример заказа (доставка)",
+                value={
+                    "full_name": "Иванов Иван",
+                    "phone": "+7 (999) 123-45-67",
+                    "email": "ivan@example.com",
+                    "city": "Москва",
+                    "address": "ул. Пушкина, д. 10",
+                    "comment": "Позвонить за час",
+                    "payment_method": "cod",
+                    "total_price": "35200.00",
+                    "delivery_type": "delivery",
+                    "region": "moscow-mo",
+                    "items": [
+                        {"product_id": 123, "quantity": 2},
+                        {"product_id": 456, "quantity": 1}
+                    ],
+                    "services": [
+                        {"service_id": 1}
+                    ]
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Пример ответа",
+                value={
+                    "id": 1,
+                    "full_name": "Иванов Иван",
+                    "phone": "+79991234567",
+                    "email": "ivan@example.com",
+                    "city": "Москва",
+                    "address": "ул. Пушкина, д. 10",
+                    "comment": "Позвонить за час",
+                    "payment_method": "cod",
+                    "delivery_type": "delivery",
+                    "status": "new",
+                    "created_at": "2025-09-29T12:34:56Z",
+                    "items_brief": [
+                        {
+                            "product_id": 123,
+                            "product_title": "Шкаф-купе Alpha 200",
+                            "product_slug": "shkaf-kupe-alpha-200",
+                            "product_image": "/media/products/alpha.webp",
+                            "quantity": 2,
+                            "price_at_moment": "12000.00",
+                            "final_price": "24000.00"
+                        }
+                    ],
+                    "services_brief": [
+                        {"service_id": 1, "service_name": "Сборка", "price_at_moment": "2500.00"}
+                    ],
+                    "subtotal": "24000.00",
+                    "services_total": "2500.00",
+                    "delivery_base": "1500.00",
+                    "delivery_discount": "0.00",
+                    "delivery_cost": "1500.00"
+                },
+                response_only=True,
+            ),
+        ],
+    )
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)
+    
+    
+
+
+
+
+# ---------- HTML виджет (только для теста/демо) ----------
+class CloudPaymentsPayView(TemplateView):
+    template_name = "payments/pay_widget.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        order = get_object_or_404(Order, pk=kwargs["order_id"])
+        request = self.request
+
+        success_url = request.build_absolute_uri(f"/api/payments/success/?order_id={order.id}")
+        fail_url    = request.build_absolute_uri(f"/api/payments/fail/?order_id={order.id}")
+        status_api  = request.build_absolute_uri(f"/api/orders/{order.id}/status/")
+
+        ctx.update({
+            "order": order,
+            "public_id": settings.CLOUDPAYMENTS_PUBLIC_ID,
+            "amount": float(order.total_price),
+            "currency": "RUB",
+            "account_id": order.email or order.phone or f"user-{order.id}",
+            "description": f"Оплата заказа #{order.id} на WhiteMebel",
+            "success_url": success_url,
+            "fail_url": fail_url,
+            "status_api": status_api,
+        })
+        return ctx
+
+
+# ---------- API: вернуть конфиг для виджета (Swagger-видимый) ----------
+class CloudPaymentsInitView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    @extend_schema(
+        parameters=[OpenApiParameter("order_id", OpenApiTypes.INT, OpenApiParameter.PATH)],
+        responses=CloudPaymentsInitResponseSerializer,
+        summary="CloudPayments: получить конфиг для оплаты заказа",
+    )
+    def get(self, request, order_id: int):
+        order = get_object_or_404(Order, pk=order_id)
+
+        success_url = request.build_absolute_uri(f"/api/payments/success/?order_id={order.id}")
+        fail_url    = request.build_absolute_uri(f"/api/payments/fail/?order_id={order.id}")
+        status_api  = request.build_absolute_uri(f"/api/orders/{order.id}/status/")
+        pay_url     = request.build_absolute_uri(reverse("cp-pay", args=[order.id]))
+
+        payload = {
+            "order_id": order.id,
+            "public_id": settings.CLOUDPAYMENTS_PUBLIC_ID,
+            "amount": float(order.total_price),
+            "currency": "RUB",
+            "account_id": order.email or order.phone or f"user-{order.id}",
+            "description": f"Оплата заказа #{order.id} на WhiteMebel",
+            "status_api": status_api,
+            "success_url": success_url,
+            "fail_url": fail_url,
+            "pay_url": pay_url,
+        }
+        return Response(CloudPaymentsInitResponseSerializer(payload).data)
+
+
+# ---------- API: статус заказа (поллинг фронта) ----------
+class OrderStatusView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    @extend_schema(
+        parameters=[OpenApiParameter("order_id", OpenApiTypes.INT, OpenApiParameter.PATH)],
+        responses=OrderStatusResponseSerializer,
+        summary="Статус заказа (для поллинга оплаты)",
+    )
+    def get(self, request, order_id: int):
+        order = get_object_or_404(Order, pk=order_id)
+        return Response({"order_id": order.id, "status": order.status, "paid": order.status == "paid"})
+
+
+# ---------- success/fail (можно редиректить на фронт) ----------
+class PaymentSuccessView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request):
+        return Response({"status": "ok", "order_id": int(request.query_params.get("order_id", 0))})
+
+
+class PaymentFailView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request):
+        return Response({"status": "fail", "order_id": int(request.query_params.get("order_id", 0))})
+
+
+# ---------- Webhook от CloudPayments (Check/Pay/Fail/Refund/Confirm) ----------
+def _verify_cp_hmac(raw_body: bytes, header_value: str, secret: str) -> bool:
+    """Проверяем Content-HMAC = base64( HMAC_SHA256(secret, raw_body) )"""
+    if not header_value:
+        return False
+    digest = hmac.new(secret.encode("utf-8"), msg=raw_body, digestmod=hashlib.sha256).digest()
+    expected = base64.b64encode(digest).decode()
+    return hmac.compare_digest(expected, header_value)
+
+
+class CloudPaymentsWebhookView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    # CloudPayments требует HTTP 200 с JSON {'code':0} для успеха
+    def _ok(self, message="OK"):
+        return Response({"code": 0, "message": message})
+
+    def _err(self, message="Error", code=13):
+        # 13 — generic decline
+        return Response({"code": code, "message": message})
+
+    @extend_schema(
+        summary="CloudPayments webhook",
+        description="Обрабатывает уведомления: Check, Pay, Fail, Refund, Confirm. Подписано через Content-HMAC.",
+        responses=None,
+    )
+    def post(self, request):
+        raw = request.body or b""
+        h = request.META.get("HTTP_CONTENT_HMAC", "")
+        if not _verify_cp_hmac(raw, h, settings.CLOUDPAYMENTS_SECRET):
+            return self._err("Bad signature", code=12)
+
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except Exception:
+            return self._err("Bad JSON", code=12)
+
+        ntype = (payload.get("NotificationType") or payload.get("notificationType") or "").lower()
+        invoice_id = payload.get("InvoiceId") or payload.get("InvoiceID")
+        data = payload.get("Data") or {}
+        order_id = data.get("order_id") or invoice_id
+        amount = Decimal(str(payload.get("Amount", "0")))
+        transaction_id = payload.get("TransactionId") or payload.get("TransactionID")
+
+        if not order_id:
+            return self._err("No order_id")
+
+        order = Order.objects.filter(pk=int(order_id)).first()
+        if not order:
+            return self._err("Order not found", code=12)
+
+        # Check — провалидацию делаем тут: сумма, состояние, и т.д.
+        if ntype == "check":
+            # проверим сумму (на рубли не ругаемся на копейки)
+            if amount.quantize(Decimal("0.01")) != order.total_price.quantize(Decimal("0.01")):
+                return self._err("Amount mismatch", code=2)
+            if order.status in ("paid", "canceled"):
+                return self._err("Order already closed", code=13)
+            return self._ok("Check OK")
+
+        # Pay — деньги списаны. Фиксируем заказ.
+        if ntype == "pay":
+            order.status = "paid"
+            # если хочешь — сохрани transaction_id, paid_at
+            # order.transaction_id = transaction_id
+            order.save(update_fields=["status"])
+            return self._ok("Pay OK")
+
+        # Fail — оплата не прошла
+        if ntype == "fail":
+            # Не обязательно отменять заказ сразу, но логично
+            order.status = "canceled"
+            order.save(update_fields=["status"])
+            return self._ok("Fail OK")
+
+        # Refund — возврат средств
+        if ntype == "refund":
+            order.status = "canceled"
+            order.save(update_fields=["status"])
+            return self._ok("Refund OK")
+
+        # Confirm — для двухстадийных (hold->capture). Если используешь charge — обычно не придёт.
+        if ntype == "confirm":
+            order.status = "paid"
+            order.save(update_fields=["status"])
+            return self._ok("Confirm OK")
+
+        # если что-то экзотическое
+        return self._ok("Ignored")
+
+
+class ServiceListView(ListAPIView):
+    """
+    GET /api/services/?active=1
+    """
+    serializer_class = ServiceListSerializer
+
+    def get_queryset(self):
+        qs = Service.objects.all().only("id", "name", "price", "is_active").order_by("name")
+        active = self.request.query_params.get("active", "1")
+        if str(active).lower() in {"1", "true", "yes"}:
+            qs = qs.filter(is_active=True)
+        elif str(active).lower() in {"0", "false", "no"}:
+            qs = qs.filter(is_active=False)
+        # любое иное значение — отдать все
+        return qs
+
+    @extend_schema(
+        summary="Список услуг",
+        parameters=[
+            OpenApiParameter(
+                name="active",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="1 — только активные (по умолчанию), 0 — только неактивные, пусто — все",
+            ),
+        ],
+        responses=ServiceListSerializer(many=True),
+        tags=["Services"],
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)

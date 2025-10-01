@@ -1,7 +1,19 @@
 # api/urls.py
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from core.views import CategoryViewSet, DeliveryRegionListView, DeliveryRegionQuoteView, FiltersView, ProductDetailView, ProductListView, SliderViewSet,ProductsByIdsView, TagListView
+from core.views import (CategoryViewSet, DeliveryRegionListView, 
+                        DeliveryRegionQuoteView, FiltersView,
+                        OrderCreateView, ProductDetailView,
+                        ProductListView, ServiceListView, SliderViewSet,
+                        ProductsByIdsView, TagListView,
+                        ContactRequestCreateView,CloudPaymentsWebhookView, 
+                        CloudPaymentsPayView, OrderStatusView)
+
+from core.views import (         # HTML-виджет (только для теста)
+    CloudPaymentsInitView,         # API: конфиг для виджета              # API: статус заказа (поллинг)
+    PaymentSuccessView,            # success (можно редиректить на фронт)
+    PaymentFailView,               # fail      # вебхук от CloudPayments
+)
 
 # from core.views import ProductViewSet, CategoryViewSet, TagViewSet, ColorViewSet
 
@@ -23,4 +35,18 @@ urlpatterns = [
     path("tags/", TagListView.as_view(), name="tag-list"),
     path("shipping/regions/", DeliveryRegionListView.as_view(), name="shipping-regions"),
     path("shipping/regions/<slug:slug>/quote/", DeliveryRegionQuoteView.as_view(), name="shipping-region-quote"),
+    path("contact-requests/", ContactRequestCreateView.as_view(), name="contact-request-create"),
+    path("orders/", OrderCreateView.as_view(), name="order-create"),
+    # HTML (тестовый шаблон виджета)
+    path("payments/pay/<int:order_id>/", CloudPaymentsPayView.as_view(), name="cp-pay"),
+
+    # API для фронта
+    path("payments/init/<int:order_id>/", CloudPaymentsInitView.as_view(), name="cp-init"),
+    path("orders/<int:order_id>/status/", OrderStatusView.as_view(), name="order-status"),
+    path("payments/success/", PaymentSuccessView.as_view(), name="payment-success"),
+    path("payments/fail/", PaymentFailView.as_view(), name="payment-fail"),
+
+    # Важно: URL вебхука CloudPayments (передашь в ЛК CloudPayments)
+    path("payments/cloudpayments/webhook/", CloudPaymentsWebhookView.as_view(), name="cp-webhook"),
+    path("api/services/", ServiceListView.as_view(), name="service-list"),
     ]

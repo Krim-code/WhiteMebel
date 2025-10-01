@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Оплата заказа #{{ order.id }} — WhiteMebel</title>
+  <script src="https://widget.cloudpayments.ru/bundles/cloudpayments.js"></script>
+</head>
+<body style="font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial">
+  <h2>WhiteMebel — оплата заказа #{{ order.id }}</h2>
+  <p>К оплате: <b>{{ amount }} {{ currency }}</b></p>
+  <button id="pay">Оплатить</button>
+  <script>
+    document.getElementById('pay').addEventListener('click', function () {
+      var widget = new cp.CloudPayments();
+      widget.pay('charge', {
+          publicId: "{{ public_id }}",
+          description: "{{ description|escapejs }}",
+          amount: {{ amount|floatformat:2 }},
+          currency: "{{ currency }}",
+          accountId: "{{ account_id|escapejs }}",
+          invoiceId: "{{ order.id }}",              // связываем платёж с заказом
+          data: { order_id: "{{ order.id }}" }      // дублируем на всякий
+        }, {
+          onSuccess: function() { window.location = "{{ success_url }}"; },
+          onFail: function()    { window.location = "{{ fail_url }}";    },
+          onComplete: function() {
+            // опционально: начать поллинг статуса
+            const url = "{{ status_api }}";
+            const i = setInterval(async () => {
+              try {
+                const r = await fetch(url);
+                const j = await r.json();
+                if (j.paid) { clearInterval(i); alert("Оплачено!"); }
+              } catch(e) {}
+            }, 2000);
+          }
+        }
+      );
+    });
+  </script>
+</body>
+</html>

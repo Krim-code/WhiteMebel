@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="x-apple-disable-message-reformatting">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Новый заказ</title>
+  <style>
+    @media (max-width: 640px){
+      .container{width:100% !important}
+      .p-24{padding:16px !important}
+      .px-24{padding-left:16px !important; padding-right:16px !important}
+      .text-sm{font-size:14px !important}
+      .text-xs{font-size:12px !important}
+      .hide-sm{display:none !important}
+    }
+  </style>
+</head>
+<body style="margin:0;background:#f6f7fb;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7fb;">
+    <tr>
+      <td align="center" style="padding:24px;">
+        <table class="container" role="presentation" cellpadding="0" cellspacing="0" width="600" style="width:600px;max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.06);">
+          <!-- Header -->
+          <tr>
+            <td class="px-24" style="background:#ff6a00;padding:22px 24px;">
+              <table role="presentation" width="100%">
+                <tr>
+                  <td style="color:#fff;font-weight:700;font-size:20px;letter-spacing:.2px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,'Helvetica Neue',sans-serif">
+                    WhiteMebel — Новый заказ #{{ order.id }}
+                  </td>
+                  <td align="right" class="hide-sm" style="color:#ffd6b5;font-size:12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,'Helvetica Neue',sans-serif">
+                    {{ order.created_at }}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Buyer / meta -->
+          <tr>
+            <td class="p-24" style="padding:20px 24px 8px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,'Helvetica Neue',sans-serif">
+              <div style="font-size:16px;font-weight:700;color:#111;margin-bottom:6px">Данные покупателя</div>
+              <table role="presentation" width="100%" style="border-collapse:collapse;background:#fff7f0;border:1px solid #ffe1cc;border-radius:10px">
+                <tr>
+                  <td style="padding:14px 16px;">
+                    <div class="text-sm" style="font-size:14px;color:#333;line-height:1.6">
+                      <b>Имя:</b> {{ order.full_name }}<br>
+                      <b>Телефон:</b> {{ order.phone }}{% if order.email %}<br>
+                      <b>Email:</b> {{ order.email }}{% endif %}<br>
+                      <b>Доставка:</b> {{ order.get_delivery_type_display }}{% if order.city %}, {{ order.city }}{% endif %}{% if order.address %}, {{ order.address }}{% endif %}<br>
+                      <b>Оплата:</b> {{ order.get_payment_method_display }}<br>
+                      <b>Статус:</b> {{ order.get_status_display }}{% if order.comment %}<br>
+                      <b>Комментарий:</b> {{ order.comment }}{% endif %}
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Items -->
+          <tr>
+            <td class="p-24" style="padding:16px 24px 8px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,'Helvetica Neue',sans-serif">
+              <div style="font-weight:700;color:#111;margin-bottom:8px">Товары</div>
+              <table role="presentation" width="100%" style="border-collapse:collapse">
+                <thead>
+                  <tr>
+                    <th align="left" class="text-xs" style="padding:10px 0;border-bottom:1px solid #eee;color:#666;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Наименование</th>
+                    <th align="right" class="text-xs" style="padding:10px 0;border-bottom:1px solid #eee;color:#666;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">SKU</th>
+                    <th align="right" class="text-xs" style="padding:10px 0;border-bottom:1px solid #eee;color:#666;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Кол-во</th>
+                    <th align="right" class="text-xs" style="padding:10px 0;border-bottom:1px solid #eee;color:#666;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Цена</th>
+                    <th align="right" class="text-xs" style="padding:10px 0;border-bottom:1px solid #eee;color:#666;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Сумма</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for it in items %}
+                  <tr>
+                    <td style="padding:10px 0;color:#111;font-size:14px">{{ it.product.title }}</td>
+                    <td align="right" style="padding:10px 0;color:#666;font-size:13px">{{ it.product.sku }}</td>
+                    <td align="right" style="padding:10px 0;color:#111;font-size:14px">{{ it.quantity }}</td>
+                    <td align="right" style="padding:10px 0;color:#111;font-size:14px">{{ it.price_at_moment }}</td>
+                    <td align="right" style="padding:10px 0;color:#111;font-size:14px">{{ it.final_price }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </td>
+          </tr>
+
+          {% if services %}
+          <!-- Services -->
+          <tr>
+            <td class="p-24" style="padding:8px 24px 0 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,'Helvetica Neue',sans-serif">
+              <div style="font-weight:700;color:#111;margin-bottom:8px">Услуги</div>
+              <table role="presentation" width="100%" style="border-collapse:collapse">
+                <tbody>
+                  {% for s in services %}
+                  <tr>
+                    <td style="padding:10px 0;color:#111;font-size:14px">{{ s.service.name }}</td>
+                    <td align="right" style="padding:10px 0;color:#111;font-size:14px">{{ s.price_at_moment }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </td>
+          </tr>
+          {% endif %}
+
+          <!-- Totals -->
+          <tr>
+            <td class="p-24" style="padding:12px 24px 24px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,'Helvetica Neue',sans-serif">
+              <table role="presentation" width="100%" style="border-collapse:collapse">
+                <tbody>
+                  {% if subtotal %}
+                  <tr>
+                    <td align="left" style="padding:6px 0;color:#666;font-size:14px">Товары</td>
+                    <td align="right" style="padding:6px 0;color:#111;font-size:14px">{{ subtotal }}</td>
+                  </tr>
+                  {% endif %}
+                  {% if services_total %}
+                  <tr>
+                    <td align="left" style="padding:6px 0;color:#666;font-size:14px">Услуги</td>
+                    <td align="right" style="padding:6px 0;color:#111;font-size:14px">{{ services_total }}</td>
+                  </tr>
+                  {% endif %}
+                  {% if delivery_base is not None %}
+                  <tr>
+                    <td align="left" style="padding:6px 0;color:#666;font-size:14px">Доставка</td>
+                    <td align="right" style="padding:6px 0;color:#111;font-size:14px">
+                      {{ delivery_base }}{% if delivery_discount and delivery_discount > 0 %} <span style="color:#0a8a00">– скидка {{ delivery_discount }}</span>{% endif %}
+                    </td>
+                  </tr>
+                  {% endif %}
+                  <tr>
+                    <td align="left" style="padding:10px 0;color:#111;font-weight:700;font-size:16px">Итого</td>
+                    <td align="right" style="padding:10px 0;color:#ff6a00;font-weight:800;font-size:18px">{{ total }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background:#fff; padding:14px 24px;border-top:1px solid #f0f0f0; text-align:center; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,'Helvetica Neue',sans-serif; color:#888;font-size:12px">
+              © {% now "Y" %} WhiteMebel — внутреннее уведомление (администратор)
+            </td>
+          </tr>
+        </table>
+
+        <div class="text-xs" style="color:#9aa0a6;font-size:12px;margin-top:10px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,'Helvetica Neue',sans-serif">
+          Это техническое письмо: отвечать не нужно.
+        </div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

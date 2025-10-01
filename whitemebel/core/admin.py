@@ -17,7 +17,8 @@ from .models import (
     Color,
     Category,
     Collection,
-    User
+    User,
+    ContactRequest
     
 )
 from django.utils.html import format_html
@@ -194,3 +195,11 @@ class DeliveryDiscountAdmin(admin.ModelAdmin):
                     "min_order_total", "active_from", "active_to", "is_active")
     list_filter = ("discount_type", "is_active", "region")
     search_fields = ("title",)
+
+
+@admin.register(ContactRequest)
+class ContactRequestAdmin(admin.ModelAdmin):
+    list_display = ("id", "name", "phone", "created_at", "processed")
+    list_filter = ("processed", "created_at")
+    search_fields = ("name", "phone")
+    list_editable = ("processed",)

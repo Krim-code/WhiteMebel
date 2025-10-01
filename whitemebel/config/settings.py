@@ -104,17 +104,25 @@ AUTH_USER_MODEL = 'core.User'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("DJANGO_DB_NAME", "app"),
-        "USER": os.getenv("DJANGO_DB_USER", "app"),
-        "PASSWORD": os.getenv("DJANGO_DB_PASSWORD", "password"),
-        "HOST": os.getenv("DJANGO_DB_HOST", "localhost"),
-        "PORT": int(os.getenv("DJANGO_DB_PORT", "5432")),
-        "CONN_MAX_AGE": 60,
+if DEBUG:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.getenv("DJANGO_DB_NAME", "app"),
+            "USER": os.getenv("DJANGO_DB_USER", "app"),
+            "PASSWORD": os.getenv("DJANGO_DB_PASSWORD", "password"),
+            "HOST": os.getenv("DJANGO_DB_HOST", "localhost"),
+            "PORT": int(os.getenv("DJANGO_DB_PORT", "5432")),
+            "CONN_MAX_AGE": 60,
+        }
+    }
 
 SPECTACULAR_SETTINGS = {
     # ... твои настройки ...
@@ -167,3 +175,20 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.yandex.ru")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "1") in {"1","true","yes"}
+EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "0") in {"1","true","yes"}
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "revi.krim@yandex.ru")
+SERVER_EMAIL = os.getenv("SERVER_EMAIL", DEFAULT_FROM_EMAIL)
+
+# Список email'ов, кого оповещать о новом заказе (через запятую)
+ORDER_NOTIFY_EMAILS = [e.strip() for e in os.getenv("ORDER_NOTIFY_EMAILS", "").split(",") if e.strip()]
+
+CLOUDPAYMENTS_PUBLIC_ID=os.getenv("CLOUDPAYMENTS_PUBLIC_ID","")
+CLOUDPAYMENTS_API_SECRET=os.getenv("CLOUDPAYMENTS_API_SECRET","")
