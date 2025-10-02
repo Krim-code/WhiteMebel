@@ -1111,8 +1111,10 @@ def _to_minor_units(value) -> int:
     """Приводит сумму к целым копейкам (int), без проблем float."""
     return int((Decimal(str(value)) * Decimal("100")).quantize(0, ROUND_HALF_UP))
 
+import logging
 
 # ---------- Сериалайзеры только для схемы Swagger ----------
+logger = logging.getLogger("core.payments")
 
 class CloudPaymentsWebhookView(APIView):
     """
@@ -1123,9 +1125,11 @@ class CloudPaymentsWebhookView(APIView):
     permission_classes = []
 
     def _ok(self, message="OK"):
+        logger.debug("CP webhook -> 200 OK: %s", message)
         return Response({"code": 0, "message": message})
 
     def _decline(self, message="Decline", code=13):
+        logger.debug("CP webhook -> 200 DECLINE code=%s: %s", code, message)
         # 11 — invalid amount; 12 — invalid request; 13 — decline
         return Response({"code": code, "message": message})
 
@@ -1156,6 +1160,7 @@ class CloudPaymentsWebhookView(APIView):
         raw = request.body or b""
         header_hmac = request.META.get("HTTP_CONTENT_HMAC", "")
 
+        
         # ВАЖНО: используем правильный секрет (не public_id)
         secret = getattr(settings, "CLOUDPAYMENTS_SECRET", None) or getattr(settings, "CLOUDPAYMENTS_API_SECRET", None)
         if not secret or not _verify_cp_hmac(raw, header_hmac, secret):
@@ -1175,8 +1180,15 @@ class CloudPaymentsWebhookView(APIView):
         data = payload.get("Data") or {}
         order_id = data.get("order_id") or invoice_id
         transaction_id = payload.get("TransactionId") or payload.get("TransactionID")
-
-        if not order_id:
+         
+         
+        logger.warning(
+            "CP webhook digest: type=%s amount=%r currency=%s invoiceId=%r transactionId=%r data=%s",
+            ntype, amount, currency, invoice_id, transaction_id,
+            json.dumps(data, ensure_ascii=False),
+        )
+        
+        if not order_id:    
             return self._decline("No order_id", code=12)
 
         order = get_object_or_404(Order, pk=int(order_id))
