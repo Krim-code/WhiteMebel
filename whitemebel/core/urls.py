@@ -53,5 +53,5 @@ urlpatterns = [
     ]
 
 urlpatterns += [
-    path("api/orders/<int:order_id>/accepted/", OrderAcceptedView.as_view(), name="order-accepted"),
+    path("orders/<int:order_id>/accepted/", OrderAcceptedView.as_view(), name="order-accepted"),
 ]
