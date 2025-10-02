@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 import os
 from pathlib import Path
 import logging
+import socket
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -206,7 +207,11 @@ DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "revi.krim@yandex.ru")
 SERVER_EMAIL = os.getenv("SERVER_EMAIL", DEFAULT_FROM_EMAIL)
 EMAIL_TIMEOUT = 10  # сек
 
-
+if os.getenv("EMAIL_FORCE_IPV4", "1") in {"1", "true", "True"}:
+    try:
+        EMAIL_HOST = socket.gethostbyname(EMAIL_HOST)  # подставит IPv4-адрес
+    except Exception:
+        pass
 # Список email'ов, кого оповещать о новом заказе (через запятую)
 ORDER_NOTIFY_EMAILS = [e.strip() for e in os.getenv("ORDER_NOTIFY_EMAILS", "").split(",") if e.strip()]
 
