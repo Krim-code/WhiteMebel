@@ -22,6 +22,7 @@ from rest_framework import permissions
 from core.models import MainSlider
 from core.serializers import MainSliderSerializer
 from decimal import Decimal, ROUND_HALF_UP
+from urllib.parse import parse_qs, unquote_plus
 
 from decimal import Decimal
 from core.models import DeliveryRegion, DeliveryDiscount
@@ -1109,135 +1110,203 @@ def _verify_cp_hmac(raw_body: bytes, header_value: str, secret: str) -> bool:
 
 logger = logging.getLogger("core.payments")
 
+
 def _client_ip(request):
     xff = request.META.get("HTTP_X_FORWARDED_FOR")
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR", "")
+    return xff.split(",")[0].strip() if xff else request.META.get("REMOTE_ADDR", "")
 
-def _to_minor_units(amount: Decimal) -> int:
+def _to_minor(amount: Decimal) -> int:
+    # безопасно переводим в копейки
     return int((Decimal(str(amount)) * 100).quantize(Decimal("1")))
+
+def _pick_hmac(request):
+    return request.META.get("HTTP_CONTENT_HMAC") or request.META.get("HTTP_X_CONTENT_HMAC") or ""
+
+def _parse_cp_payload(raw: bytes, content_type: str) -> dict:
+    """
+    Поддерживаем оба варианта:
+      1) application/json: { ... }
+      2) application/x-www-form-urlencoded: key1=..&key2=..&Data=%7B...%7D
+    """
+    body = raw.decode("utf-8", errors="replace")
+
+    # JSON?
+    if "application/json" in (content_type or "").lower():
+        return json.loads(body)
+
+    # Form-URL-Encoded
+    q = parse_qs(body, keep_blank_values=True)
+    payload = {k: (v[0] if isinstance(v, list) and v else "") for k, v in q.items()}
+
+    # Data может быть строкой с урл-эскейпом — попытаемся распарсить как JSON
+    data_raw = payload.get("Data") or payload.get("data")
+    if data_raw:
+        try:
+            payload["Data"] = json.loads(unquote_plus(data_raw))
+        except Exception:
+            payload["DataRaw"] = data_raw
+            payload["Data"] = {}
+    else:
+        payload["Data"] = {}
+
+    return payload
+
+def _detect_event(payload: dict) -> str:
+    """
+    Унифицируем тип события:
+      - notificationType: check|pay|fail|refund|confirm
+      - либо OperationType=Payment + Status=Completed/Authorized/Declined/Refunded/Reversed/Voided
+    Возвращаем одну из: check|pay|fail|refund|confirm|unknown
+    """
+    ntype = (payload.get("NotificationType") or payload.get("notificationType") or "").lower()
+    if ntype:
+        return ntype
+
+    operation = (payload.get("OperationType") or "").lower()
+    status = (payload.get("Status") or "").lower()
+
+    if operation == "payment":
+        if status in {"completed", "authorized"}:
+            return "pay"
+        if status in {"refunded", "reversed", "voided"}:
+            return "refund"
+        if status in {"declined", "failed"}:
+            return "fail"
+    return "unknown"
+
 
 class CloudPaymentsWebhookView(APIView):
     authentication_classes = []
     permission_classes = []
 
     def _ok(self, message="OK"):
-        logger.debug("CP webhook -> 200 OK: %s", message)
+        logger.debug("CP webhook -> OK: %s", message)
+        # Всегда 200 с {"code": 0} для успеха
         return Response({"code": 0, "message": message})
 
     def _err(self, message="Error", code=13):
-        logger.debug("CP webhook -> 200 DECLINE code=%s: %s", code, message)
-        # Вебхуку CP всегда нужно вернуть 200 с JSON {"code":<code>}
+        logger.debug("CP webhook -> DECLINE code=%s: %s", code, message)
+        # И при ошибке — тоже 200, но с ненулевым code
         return Response({"code": code, "message": message})
 
+    @extend_schema(
+        summary="CloudPayments webhook",
+        description="Принимает webhooks от CP (JSON либо x-www-form-urlencoded). Проверка HMAC, сверка суммы, смена статуса заказа.",
+        request=OpenApiTypes.OBJECT,
+        responses={200: OpenApiTypes.OBJECT},
+    )
     def post(self, request):
         raw = request.body or b""
-        hdr_hmac = request.META.get("HTTP_CONTENT_HMAC", "")
+        content_type = request.META.get("CONTENT_TYPE", "")
+        hdr_hmac = _pick_hmac(request)
         ip = _client_ip(request)
 
-        # Логуем сырые данные и заголовки (урезаем до безопасной длины)
+        # Лог входящих данных (обрезаем тело, чтобы не заспамить)
         headers_to_log = {
             k: v for k, v in request.META.items()
             if k.startswith("HTTP_") and k not in {"HTTP_COOKIE", "HTTP_AUTHORIZATION"}
         }
         logger.warning(
-            "CP webhook <-- ip=%s hmac_header=%s headers=%s raw=%s",
-            ip,
-            hdr_hmac,
+            "CP webhook <-- ip=%s ct=%s hmac=%s headers=%s raw=%s",
+            ip, content_type, hdr_hmac,
             json.dumps(headers_to_log, ensure_ascii=False),
-            raw.decode("utf-8", errors="replace")[:4000],   # режем, чтобы не захламлять логи
+            raw.decode("utf-8", errors="replace")[:4000],
         )
 
-        # Пытаемся распарсить JSON до проверки сигнатуры — чтобы увидеть, что прислали
-        try:
-            payload = json.loads(raw.decode("utf-8"))
-        except Exception as e:
-            logger.error("CP webhook: bad JSON: %s raw=%r", e, raw[:1000])
-            return self._err("Bad JSON", code=12)
-
-        # Проверяем HMAC и пишем результат в лог
-        sig_ok = _verify_cp_hmac(raw, hdr_hmac, settings.CLOUDPAYMENTS_API_SECRET)
-        logger.warning("CP webhook: HMAC valid=%s", sig_ok)
-
-        # Короткий дайджест полезных полей для диагностики
-        ntype = (payload.get("NotificationType") or payload.get("notificationType") or "").lower()
-        invoice_id = payload.get("InvoiceId") or payload.get("InvoiceID")
-        amount_raw = payload.get("Amount")
-        currency = (payload.get("Currency") or "").upper()
-        transaction_id = payload.get("TransactionId") or payload.get("TransactionID")
-        data = payload.get("Data") or {}
-        logger.warning(
-            "CP webhook digest: type=%s amount=%r currency=%s invoiceId=%r transactionId=%r data=%s",
-            ntype, amount_raw, currency, invoice_id, transaction_id,
-            json.dumps(data, ensure_ascii=False),
-        )
-
-        # Если подпись не сошлась — фиксируем и отказываем
-        if not sig_ok:
+        # HMAC-подпись по «сырым» байтам
+        if not _verify_cp_hmac(raw, hdr_hmac, settings.CLOUDPAYMENTS_API_SECRET):
             return self._err("Bad signature", code=12)
 
-        # --- ниже твоя обычная логика ---
-        from core.models import Order  # чтобы не плодить импортов сверху
+        # Парсим payload (JSON или form)
+        try:
+            payload = _parse_cp_payload(raw, content_type)
+        except Exception as e:
+            logger.error("CP webhook: parse error: %s", e)
+            return self._err("Bad payload", code=12)
+
+        # Дайджест
+        logger.warning(
+            "CP webhook digest: payload=%s",
+            json.dumps(payload, ensure_ascii=False)[:4000],
+        )
+
+        # Унифицированные поля
+        event = _detect_event(payload)  # check|pay|fail|refund|confirm|unknown
+        invoice_id = payload.get("InvoiceId") or payload.get("InvoiceID") or payload.get("invoiceId")
+        amount_raw = payload.get("Amount")
+        currency = (payload.get("Currency") or "").upper()
+        data = payload.get("Data") or {}
+
+        # Ищем order_id
         order_id = (data.get("order_id") or invoice_id)
         if not order_id:
-            logger.error("CP webhook: no order_id in payload")
-            return self._err("No order_id")
-
-        order = Order.objects.filter(pk=int(order_id)).first()
-        if not order:
-            logger.error("CP webhook: order %s not found", order_id)
-            return self._err("Order not found", code=12)
+            return self._err("No order_id", code=12)
 
         try:
-            amount = Decimal(str(amount_raw))
-        except Exception:
-            logger.error("CP webhook: invalid Amount=%r", amount_raw)
-            return self._err("Invalid amount", code=12)
+            order = Order.objects.get(pk=int(order_id))
+        except Order.DoesNotExist:
+            return self._err("Order not found", code=12)
 
-        cp_minor = _to_minor_units(amount)
-        ord_minor = _to_minor_units(order.total_price)
+        # Сумма (если есть в событии)
+        if amount_raw not in (None, ""):
+            try:
+                amount = Decimal(str(amount_raw))
+            except Exception:
+                return self._err("Invalid amount", code=12)
+            cp_minor = _to_minor(amount)
+            ord_minor = _to_minor(order.total_price)
+        else:
+            cp_minor = ord_minor = None
 
-        if ntype == "check":
-            if currency != "RUB":
+        # Обработка типов
+        if event == "check":
+            if currency and currency != "RUB":
                 return self._err("Invalid currency", code=13)
-            if cp_minor != ord_minor:
+            if cp_minor is not None and cp_minor != ord_minor:
                 logger.warning(
-                    "CP CHECK amount mismatch: order_id=%s got_minor=%s(raw=%s) expected_minor=%s(order=%s)",
-                    order.id, cp_minor, amount, ord_minor, str(order.total_price),
+                    "CP CHECK mismatch: order=%s got_minor=%s expected_minor=%s",
+                    order.id, cp_minor, ord_minor
                 )
+                # 11 = Invalid amount
                 return self._err("Invalid amount", code=11)
             if order.status in ("paid", "canceled"):
                 return self._err("Order already closed", code=13)
             return self._ok("Check OK")
 
-        if ntype == "pay":
-            order.status = "paid"
-            order.save(update_fields=["status"])
-            logger.warning("CP PAY: order %s -> paid", order.id)
+        if event == "pay":
+            # по-хорошему тоже сверяем сумму, если пришла
+            if cp_minor is not None and cp_minor != ord_minor:
+                logger.warning(
+                    "CP PAY mismatch: order=%s got_minor=%s expected_minor=%s",
+                    order.id, cp_minor, ord_minor
+                )
+                return self._err("Invalid amount", code=11)
+            if order.status != "paid":
+                order.status = "paid"
+                order.save(update_fields=["status"])
             return self._ok("Pay OK")
 
-        if ntype == "fail":
-            order.status = "canceled"
-            order.save(update_fields=["status"])
-            logger.warning("CP FAIL: order %s -> canceled", order.id)
-            return self._ok("Fail OK")
-
-        if ntype == "refund":
-            order.status = "canceled"
-            order.save(update_fields=["status"])
-            logger.warning("CP REFUND: order %s -> canceled", order.id)
+        if event == "refund":
+            if order.status != "canceled":
+                order.status = "canceled"
+                order.save(update_fields=["status"])
             return self._ok("Refund OK")
 
-        if ntype == "confirm":
-            order.status = "paid"
-            order.save(update_fields=["status"])
-            logger.warning("CP CONFIRM: order %s -> paid", order.id)
+        if event == "fail":
+            # необязательно отменять, но логично
+            if order.status not in ("canceled", "paid"):
+                order.status = "canceled"
+                order.save(update_fields=["status"])
+            return self._ok("Fail OK")
+
+        if event == "confirm":
+            if order.status != "paid":
+                order.status = "paid"
+                order.save(update_fields=["status"])
             return self._ok("Confirm OK")
 
-        logger.warning("CP webhook: unknown type=%s — ignored", ntype)
+        logger.warning("CP webhook: unknown/ignored event=%s", event)
         return self._ok("Ignored")
-
 
 class ServiceListView(ListAPIView):
     """
