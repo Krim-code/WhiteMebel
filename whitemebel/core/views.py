@@ -1393,26 +1393,24 @@ class OneClickRequestCreateView(CreateAPIView):
     permission_classes = []
     throttle_classes = [OneClickAnonThrottle]
 
+    
     @extend_schema(
         summary="Покупка в один клик",
         description="Принимает имя, телефон (+7XXXXXXXXXX) и ссылку на карточку товара.",
         request=OneClickRequestSerializer,
-        responses={
-            201: OpenApiResponse(response=OneClickRequestSerializer, description="Создано"),
-            400: OpenApiResponse(description="Ошибка валидации"),
-            429: OpenApiResponse(description="Слишком много запросов"),
-        },
+        responses={201: OpenApiResponse(response=OneClickRequestSerializer, description="Создано")},
         examples=[
-            {
-                "name": "Пример",
-                "value": {
+            OpenApiExample(
+                name="Пример запроса",
+                value={
                     "name": "Иван",
                     "phone": "+7 (999) 123-45-67",
                     "product_url": "https://white-mebel.com/products/shkaf-xxl/",
                     "comment": "Перезвоните утром"
-                }
-            }
-        ]
+                },
+                request_only=True,
+            )
+        ],
     )
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)
