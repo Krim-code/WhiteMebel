@@ -114,14 +114,14 @@
         setLoading(true);
         try{
           var widget = new cp.CloudPayments({
-    language: "ru-RU",
-    applePaySupport: true,
-    googlePaySupport: true,
-    yandexPaySupport: true,
-    tinkoffPaySupport: true,
-    tinkoffInstallmentSupport: false,
-    sbpSupport: true
-});
+                language: "ru-RU",
+                applePaySupport: true,
+                googlePaySupport: true,
+                yandexPaySupport: true,
+                tinkoffPaySupport: true,
+                tinkoffInstallmentSupport: false,
+                sbpSupport: true
+            });
           widget.pay('charge',
             {
               publicId: "{{ public_id }}",
@@ -131,7 +131,9 @@
               accountId: "{{ account_id|escapejs }}",
               invoiceId: "{{ order.id }}",
               email: email,                              // <-- передаём email в платёж
-              data: { order_id: "{{ order.id }}", email: email } // и дублируем в Data
+              data: { order_id: "{{ order.id }}", email: email },
+              skin: "modern",
+              requireEmail: false,// и дублируем в Data
             },
             {
               onSuccess: function(){ ok.style.display='flex'; fail.style.display='none'; window.location="{{ success_url }}"; },
