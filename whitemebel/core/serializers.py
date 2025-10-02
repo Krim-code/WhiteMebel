@@ -1,8 +1,9 @@
+from urllib.parse import urlparse
 from django.conf import settings
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 from decimal import Decimal
-from core.models import DeliveryRegion, DeliveryDiscount
+from core.models import DeliveryRegion, DeliveryDiscount, OneClickRequest
 from core.models import ContactRequest
 from core.utils.phone import normalize_ru_phone
 from core.models import (
@@ -773,3 +774,46 @@ class CloudPaymentsWebhookIn(serializers.Serializer):
 class CloudPaymentsWebhookOut(serializers.Serializer):
     code = serializers.IntegerField()
     message = serializers.CharField()
+
+
+PRODUCT_SLUG_RE = re.compile(r"/products/(?P<slug>[^/\s]+)/?")
+
+class OneClickRequestSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(max_length=150)
+    phone = serializers.CharField(max_length=32)  # вход может быть «грязный»
+    product_url = serializers.URLField(max_length=500)
+    comment = serializers.CharField(max_length=500, required=False, allow_blank=True)
+
+    class Meta:
+        model = OneClickRequest
+        fields = ("id", "name", "phone", "product_url", "comment", "status", "created_at")
+        read_only_fields = ("id", "status", "created_at")
+
+    def validate_phone(self, value):
+        return normalize_ru_phone(value)
+
+    def validate_product_url(self, value: str):
+        # Разрешим только http(s)
+        u = urlparse(value)
+        if u.scheme not in ("http", "https"):
+            raise serializers.ValidationError("Ссылка должна начинаться с http(s)://")
+        return value
+
+    def _try_attach_product(self, url: str):
+        m = PRODUCT_SLUG_RE.search(url)
+        if not m:
+            return None
+        slug = m.group("slug")
+        return Product.objects.filter(slug=slug).first()
+
+    def create(self, validated):
+        # Пытаемся связать товар по ссылке
+        product = self._try_attach_product(validated["product_url"])
+        instance = OneClickRequest.objects.create(
+            name=validated["name"],
+            phone=validated["phone"],
+            product_url=validated["product_url"],
+            product=product,
+            comment=validated.get("comment", ""),
+        )
+        return instance

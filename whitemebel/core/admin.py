@@ -5,6 +5,7 @@ from .models import (
     DeliveryDiscount,
     DeliveryRegion,
     MainSlider,
+    OneClickRequest,
     Order,
     OrderItem,
     OrderService,
@@ -203,3 +204,9 @@ class ContactRequestAdmin(admin.ModelAdmin):
     list_filter = ("processed", "created_at")
     search_fields = ("name", "phone")
     list_editable = ("processed",)
+@admin.register(OneClickRequest)
+class OneClickRequestAdmin(admin.ModelAdmin):
+    list_display = ("id", "name", "phone", "product", "status", "created_at")
+    list_filter  = ("status", "created_at")
+    search_fields = ("name", "phone", "product_url", "product__title")
+    readonly_fields = ("created_at",)

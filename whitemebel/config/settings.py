@@ -106,7 +106,7 @@ AUTH_USER_MODEL = 'core.User'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 # if DEBUG:
-#     DATABASES = {
+# DATABASES = {
 #         "default": {
 #             "ENGINE": "django.db.backends.sqlite3",
 #             "NAME": BASE_DIR / "db.sqlite3",
@@ -114,16 +114,16 @@ AUTH_USER_MODEL = 'core.User'
 #     }
 # else:
 DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.getenv("DJANGO_DB_NAME", "app"),
-            "USER": os.getenv("DJANGO_DB_USER", "app"),
-            "PASSWORD": os.getenv("DJANGO_DB_PASSWORD", "password"),
-            "HOST": os.getenv("DJANGO_DB_HOST", "localhost"),
-            "PORT": int(os.getenv("DJANGO_DB_PORT", "5432")),
-            "CONN_MAX_AGE": 60,
+            "default": {
+                "ENGINE": "django.db.backends.postgresql",
+                "NAME": os.getenv("DJANGO_DB_NAME", "app"),
+                "USER": os.getenv("DJANGO_DB_USER", "app"),
+                "PASSWORD": os.getenv("DJANGO_DB_PASSWORD", "password"),
+                "HOST": os.getenv("DJANGO_DB_HOST", "localhost"),
+                "PORT": int(os.getenv("DJANGO_DB_PORT", "5432")),
+                "CONN_MAX_AGE": 60,
+            }
         }
-    }
 
 SPECTACULAR_SETTINGS = {
     # ... твои настройки ...

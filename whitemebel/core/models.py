@@ -512,3 +512,30 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"Payment #{self.id} for order #{self.order_id} [{self.status}]"
+    
+    
+    
+class OneClickRequest(models.Model):
+    class Status(models.TextChoices):
+        NEW        = "new",        "Новая"
+        CONTACTED  = "contacted",  "Связались"
+        ORDERED    = "ordered",    "Оформлен заказ"
+        REJECTED   = "rejected",   "Отклонена"
+
+    name         = models.CharField("Имя", max_length=150)
+    phone        = models.CharField("Телефон", max_length=16, db_index=True)  # формат +7XXXXXXXXXX
+    product_url  = models.URLField("Ссылка на товар", max_length=500)
+    # опционально: если сможем распарсить slug — сохраним связь
+    product      = models.ForeignKey("core.Product", null=True, blank=True,
+                                     on_delete=models.SET_NULL, verbose_name="Товар")
+    comment      = models.CharField("Комментарий", max_length=500, blank=True)
+    status       = models.CharField("Статус", max_length=20, choices=Status.choices, default=Status.NEW)
+    created_at   = models.DateTimeField("Создано", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Заявка «в один клик»"
+        verbose_name_plural = "Заявки «в один клик»"
+        ordering = ("-created_at",)
+
+    def __str__(self):
+        return f"{self.name} {self.phone} → {self.product or self.product_url}"

@@ -48,6 +48,12 @@ from core.serializers import (
     CloudPaymentsInitResponseSerializer,
     OrderStatusResponseSerializer,
 )
+from rest_framework.throttling import AnonRateThrottle
+from drf_spectacular.utils import extend_schema, OpenApiResponse
+from core.serializers import OneClickRequestSerializer
+from core.models import OneClickRequest
+
+
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -1376,3 +1382,37 @@ class OrderAcceptedView(TemplateView):
             "pay_url":  req.build_absolute_uri(f"/api/payments/pay/{order.id}/?autostart=1"),
         })
         return ctx
+    
+class OneClickAnonThrottle(AnonRateThrottle):
+    rate = "10/hour"  # антиспам, при желании поменяй
+
+class OneClickRequestCreateView(CreateAPIView):
+    queryset = OneClickRequest.objects.all()
+    serializer_class = OneClickRequestSerializer
+    authentication_classes = []   # публичная форма
+    permission_classes = []
+    throttle_classes = [OneClickAnonThrottle]
+
+    @extend_schema(
+        summary="Покупка в один клик",
+        description="Принимает имя, телефон (+7XXXXXXXXXX) и ссылку на карточку товара.",
+        request=OneClickRequestSerializer,
+        responses={
+            201: OpenApiResponse(response=OneClickRequestSerializer, description="Создано"),
+            400: OpenApiResponse(description="Ошибка валидации"),
+            429: OpenApiResponse(description="Слишком много запросов"),
+        },
+        examples=[
+            {
+                "name": "Пример",
+                "value": {
+                    "name": "Иван",
+                    "phone": "+7 (999) 123-45-67",
+                    "product_url": "https://white-mebel.com/products/shkaf-xxl/",
+                    "comment": "Перезвоните утром"
+                }
+            }
+        ]
+    )
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)

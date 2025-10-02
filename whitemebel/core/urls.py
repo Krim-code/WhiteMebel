@@ -14,7 +14,7 @@ from core.views import (         # HTML-виджет (только для тес
     PaymentSuccessView,            # success (можно редиректить на фронт)
     PaymentFailView,               # fail      # вебхук от CloudPayments
 )
-from .views import OrderAcceptedView
+from .views import OneClickRequestCreateView, OrderAcceptedView
 
 # from core.views import ProductViewSet, CategoryViewSet, TagViewSet, ColorViewSet
 
@@ -50,6 +50,7 @@ urlpatterns = [
     # Важно: URL вебхука CloudPayments (передашь в ЛК CloudPayments)
     path("payments/cloudpayments/webhook/", CloudPaymentsWebhookView.as_view(), name="cp-webhook"),
     path("services/", ServiceListView.as_view(), name="service-list"),
+    path("one-click/", OneClickRequestCreateView.as_view(), name="one-click-create"),
     ]
 
 urlpatterns += [
