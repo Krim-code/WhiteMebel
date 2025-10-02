@@ -167,6 +167,10 @@
     (function(){
       const amountMinor = {{ amount_minor|default:0 }};
       const amountHuman = (amountMinor/100).toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+      const human = (amountMinor/100).toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      document.getElementById('amount-human').textContent = human;
+      document.getElementById('pay-label').textContent = 'Оплатить ' + human + ' {{ currency }}';
       // Подставим красиво в блок суммы и кнопку
       document.querySelector('.amount').innerHTML =
         '<span class="num">'+ amountHuman +'</span><span class="cur"> {{ currency }}</span>';
@@ -188,7 +192,17 @@
       function openWidget(){
         setLoading(true);
         try{
-          var widget = new cp.CloudPayments();
+          var widget = new cp.CloudPayments({
+            email:"",
+            language: "ru-RU",
+            applePaySupport: true,
+            googlePaySupport: true,
+            yandexPaySupport: true,
+            tinkoffPaySupport: true,
+            tinkoffInstallmentSupport: false,
+            sbpSupport: true
+          }
+          );
           widget.pay('charge',
             {
               publicId: "{{ public_id }}",
