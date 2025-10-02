@@ -1057,6 +1057,7 @@ class CloudPaymentsInitView(APIView):
             "public_id": settings.CLOUDPAYMENTS_PUBLIC_ID,
             "amount": float(order.total_price),
             "currency": "RUB",
+            "customer_email": order.email or "",
             "account_id": order.email or order.phone or f"user-{order.id}",
             "description": f"Оплата заказа #{order.id} на WhiteMebel",
             "status_api": status_api,

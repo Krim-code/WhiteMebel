@@ -6,105 +6,29 @@
   <title>Оплата заказа #{{ order.id }} — WhiteMebel</title>
   <script src="https://widget.cloudpayments.ru/bundles/cloudpayments.js"></script>
   <style>
-    :root{
-      --brand:#ff6a00;
-      --brand-700:#e85f00;
-      --text:#1f2937;
-      --muted:#6b7280;
-      --ring:#ffe7d6;
-      --bg:#f7f7f9;
-      --card-bg:#fff;
-      --success:#10b981;
-      --danger:#ef4444;
-    }
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{
-      margin:0;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Helvetica Neue", sans-serif;
-      color:var(--text);
-      background:
-        radial-gradient(1200px 800px at 100% -20%, #fff 0, #fff 30%, #f9fafb 60%, #f3f4f6 100%),
-        linear-gradient(180deg,#fff 0,#f7f7f9 100%);
-    }
-    .wrap{
-      min-height:100%;
-      display:grid;
-      place-items:center;
-      padding:24px;
-    }
-    .card{
-      width:100%;
-      max-width:720px;
-      background:var(--card-bg);
-      border-radius:16px;
-      box-shadow: 0 10px 30px rgba(0,0,0,.06), 0 2px 8px rgba(0,0,0,.04);
-      overflow:hidden;
-      border:1px solid #eee;
-    }
-    .header{
-      display:flex; align-items:center; gap:12px;
-      padding:20px 24px;
-      border-bottom:1px solid #f1f1f3;
-      background:linear-gradient(0deg,#fff,#fff), radial-gradient(1200px 400px at -30% 0, #fff 0, #fff 40%, #fff0 100%);
-    }
-    .logo{
-      display:inline-grid; place-items:center;
-      width:38px;height:38px;border-radius:10px;
-      background:var(--ring);
-      color:var(--brand); font-weight:800;
-      letter-spacing:.5px;
-    }
-    .brand{font-weight:800; font-size:18px}
-    .badge{
-      margin-left:auto;
-      font-size:12px; font-weight:600; color:var(--muted);
-      background:#f8fafc; border:1px solid #eef2f7; padding:6px 10px; border-radius:999px;
-    }
-    .body{padding:24px}
-    .title{font-size:22px; font-weight:800; margin:0 0 6px}
-    .subtitle{color:var(--muted); margin:0 0 20px}
-    .amount{
-      display:flex; align-items:baseline; gap:10px;
-      padding:14px 16px; background:#fff7f1;
-      border:1px solid #ffe3cd; border-radius:12px; width:max-content;
-      margin: 8px 0 20px;
-    }
-    .amount .num{font-size:28px; font-weight:900; color:var(--brand)}
-    .amount .cur{font-weight:700; color:var(--brand)}
-    .hint{
-      display:flex; gap:12px; align-items:flex-start;
-      color:var(--muted); font-size:14px; line-height:1.5; margin-top:4px;
-    }
-    .hint .dot{width:7px;height:7px;border-radius:999px;background:var(--brand);margin-top:7px;opacity:.8}
-    .actions{display:flex; gap:12px; flex-wrap:wrap; margin-top:18px}
-    .btn{
-      appearance:none; border:0; cursor:pointer;
-      padding:14px 18px; border-radius:10px; font-weight:800; font-size:16px;
-      transition:.2s transform ease, .2s box-shadow ease, .2s background ease;
-    }
-    .btn-primary{
-      background:var(--brand); color:#fff;
-      box-shadow: 0 8px 18px rgba(255,106,0,.25), 0 2px 6px rgba(255,106,0,.15);
-    }
-    .btn-primary:hover{ background:var(--brand-700); transform: translateY(-1px) }
-    .btn-secondary{ background:#fff; color:var(--text); border:1px solid #ececec }
-    .btn:disabled{opacity:.6; cursor:not-allowed; transform:none}
-    .secure{
-      display:flex; gap:14px; align-items:center; margin-top:20px; color:var(--muted); font-size:13px;
-    }
-    .pill{padding:6px 10px;border-radius:999px;border:1px solid #eef2f7;background:#f8fafc}
-    .footer{
-      padding:14px 24px; border-top:1px solid #f1f1f3;
-      display:flex; justify-content:space-between; align-items:center; color:#9aa0a6; font-size:12px;
-      background:#fff;
-    }
-    .status{
-      display:none; gap:8px; align-items:center; font-weight:700; font-size:14px;
-    }
-    .status.ok{color:var(--success)} .status.fail{color:var(--danger)}
+    :root{--brand:#ff6a00;--brand-700:#e85f00;--text:#1f2937;--muted:#6b7280;--ring:#ffe7d6;--bg:#f7f7f9;--card:#fff;--success:#10b981;--danger:#ef4444}
+    *{box-sizing:border-box} html,body{height:100%}
+    body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,"Helvetica Neue",sans-serif;color:var(--text);background:linear-gradient(180deg,#fff 0,#f7f7f9 100%)}
+    .wrap{min-height:100%;display:grid;place-items:center;padding:24px}
+    .card{width:100%;max-width:720px;background:var(--card);border-radius:16px;border:1px solid #eee;box-shadow:0 10px 30px rgba(0,0,0,.06)}
+    .header{display:flex;gap:12px;align-items:center;padding:20px 24px;border-bottom:1px solid #f1f1f3}
+    .logo{width:38px;height:38px;border-radius:10px;background:var(--ring);color:var(--brand);display:grid;place-items:center;font-weight:800}
+    .brand{font-weight:800} .badge{margin-left:auto;color:var(--muted);font-size:12px;border:1px solid #eef2f7;border-radius:999px;padding:6px 10px}
+    .body{padding:24px} .title{margin:0 0 6px;font-size:22px;font-weight:800} .subtitle{margin:0 0 18px;color:var(--muted)}
+    .amount{display:flex;gap:10px;align-items:baseline;background:#fff7f1;border:1px solid #ffe3cd;border-radius:12px;padding:12px 14px;width:max-content;margin:8px 0 20px}
+    .num{font-size:28px;font-weight:900;color:var(--brand)} .cur{font-weight:700;color:var(--brand)}
+    .field{margin:14px 0 4px} .label{font-size:13px;color:var(--muted);margin-bottom:6px} 
+    .input{width:100%;max-width:360px;padding:12px 12px;border-radius:10px;border:1px solid #e5e7eb;outline:0}
+    .hint{display:flex;gap:12px;color:var(--muted);font-size:14px;margin-top:8px} .dot{width:7px;height:7px;border-radius:999px;background:var(--brand);margin-top:6px;opacity:.8}
+    .actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:18px}
+    .btn{border:0;border-radius:10px;padding:14px 18px;font-weight:800;font-size:16px;cursor:pointer;transition:.2s}
+    .btn-primary{background:var(--brand);color:#fff;box-shadow:0 8px 18px rgba(255,106,0,.25),0 2px 6px rgba(255,106,0,.15)} .btn-primary:hover{background:var(--brand-700)}
+    .btn-secondary{background:#fff;border:1px solid #ececec} .btn:disabled{opacity:.6;cursor:not-allowed}
+    .status{display:none;gap:8px;align-items:center;font-weight:700;font-size:14px;margin-top:10px}
+    .ok{color:var(--success)} .fail{color:var(--danger)}
     .spinner{display:none;width:18px;height:18px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;margin-left:8px;animation:spin 1s linear infinite}
     @keyframes spin{to{transform:rotate(360deg)}}
+    .footer{padding:14px 24px;border-top:1px solid #f1f1f3;display:flex;justify-content:space-between;color:#9aa0a6;font-size:12px}
   </style>
 </head>
 <body>
@@ -118,42 +42,33 @@
 
       <div class="body">
         <h1 class="title">Оплата заказа</h1>
-        <p class="subtitle">Проверьте сумму и нажмите «Оплатить» — откроется защищённый виджет CloudPayments.</p>
+        <p class="subtitle">Проверьте сумму и email для чека, затем нажмите «Оплатить».</p>
 
         <div class="amount">
-          <div class="num">{{ amount_minor|floatformat:-2|divisibleby:0 }}{{ amount_minor|floatformat:"-2"|add:""|slice:":0" }}</div>
+          <span id="amount" class="num"></span><span class="cur">{{ currency }}</span>
         </div>
 
-        <script>
-          // Нормальный вывод суммы с копейками через шаблонные переменные:
-          // присвоим из контекста и отрисуем нормальным способом ниже.
-        </script>
+        <!-- Email для чека (предзаполняем, если есть в заказе) -->
+        <div class="field">
+          <div class="label">Email для электронного чека</div>
+          <input id="email" type="email" class="input" placeholder="you@example.com"
+                 value="{{ customer_email|escape }}" autocomplete="email" />
+        </div>
 
-        <div class="hint">
-          <div class="dot"></div>
-          <div>Оплата происходит по защищённому протоколу, данные карт не попадают на наш сервер.</div>
+        <div class="hint"><div class="dot"></div>
+          <div>Оплата проходит в защищённом виджете CloudPayments. Данные карты не попадают на наш сервер.</div>
         </div>
 
         <div class="actions">
           <button id="pay" class="btn btn-primary">
-            Оплатить {{ (amount_minor|floatformat:0) | add:"" }}
+            <span id="pay-text">Оплатить</span>
             <span id="spin" class="spinner"></span>
           </button>
           <button id="back" class="btn btn-secondary" type="button">Вернуться назад</button>
         </div>
 
-        <div id="status-ok" class="status ok" style="margin-top:10px">
-          ✓ Оплачено — формируем заказ
-        </div>
-        <div id="status-fail" class="status fail" style="margin-top:10px">
-          ⨯ Оплата не прошла — попробуйте ещё раз
-        </div>
-
-        <div class="secure">
-          <span class="pill">3-D Secure</span>
-          <span class="pill">PCI DSS</span>
-          <span class="pill">HTTPS</span>
-        </div>
+        <div id="ok" class="status ok">✓ Оплачено — формируем заказ</div>
+        <div id="fail" class="status fail">⨯ Оплата не прошла — попробуйте ещё раз</div>
       </div>
 
       <div class="footer">
@@ -166,98 +81,85 @@
   <script>
     (function(){
       const amountMinor = {{ amount_minor|default:0 }};
-      const amountHuman = (amountMinor/100).toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      const currency = "{{ currency }}";
+      const amountHuman = (amountMinor/100).toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2});
+      document.getElementById('amount').textContent = amountHuman;
+      document.getElementById('pay-text').textContent = 'Оплатить ' + amountHuman + ' ' + currency;
 
-      const human = (amountMinor/100).toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-      document.getElementById('amount-human').textContent = human;
-      document.getElementById('pay-label').textContent = 'Оплатить ' + human + ' {{ currency }}';
-      // Подставим красиво в блок суммы и кнопку
-      document.querySelector('.amount').innerHTML =
-        '<span class="num">'+ amountHuman +'</span><span class="cur"> {{ currency }}</span>';
-      document.getElementById('pay').firstChild.nodeValue = 'Оплатить ' + amountHuman + ' {{ currency }} ';
-
-      const btn = document.getElementById('pay');
+      const emailInput = document.getElementById('email');
+      const btn  = document.getElementById('pay');
       const back = document.getElementById('back');
       const spin = document.getElementById('spin');
-      const ok = document.getElementById('status-ok');
-      const fail = document.getElementById('status-fail');
+      const ok   = document.getElementById('ok');
+      const fail = document.getElementById('fail');
 
-      function setLoading(v){
-        btn.disabled = v;
-        spin.style.display = v ? 'inline-block' : 'none';
+      function getEmail(){
+        return (emailInput && emailInput.value || '').trim();
       }
+      function validEmail(v){
+        if (!v) return true; // не заставляем, но если есть — проверим
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+      }
+      function setLoading(v){ btn.disabled=v; spin.style.display = v ? 'inline-block' : 'none'; }
 
-      back.addEventListener('click', () => history.length > 1 ? history.back() : (location = '/'));
+      back.addEventListener('click', () => history.length>1 ? history.back() : (location='/'));
 
       function openWidget(){
+        const email = getEmail();
+        if (!validEmail(email)){
+          alert('Похоже, email указан некорректно. Проверьте адрес.');
+          emailInput.focus();
+          return;
+        }
         setLoading(true);
         try{
           var widget = new cp.CloudPayments({
-            email:"",
-            language: "ru-RU",
-            applePaySupport: true,
-            googlePaySupport: true,
-            yandexPaySupport: true,
-            tinkoffPaySupport: true,
-            tinkoffInstallmentSupport: false,
-            sbpSupport: true
-          }
-          );
+    language: "ru-RU",
+    applePaySupport: true,
+    googlePaySupport: true,
+    yandexPaySupport: true,
+    tinkoffPaySupport: true,
+    tinkoffInstallmentSupport: false,
+    sbpSupport: true
+});
           widget.pay('charge',
             {
               publicId: "{{ public_id }}",
               description: "{{ description|escapejs }}",
               amount: amountMinor/100,
-              currency: "{{ currency }}",
+              currency: currency,
               accountId: "{{ account_id|escapejs }}",
               invoiceId: "{{ order.id }}",
-              data: { order_id: "{{ order.id }}" }
+              email: email,                              // <-- передаём email в платёж
+              data: { order_id: "{{ order.id }}", email: email } // и дублируем в Data
             },
             {
-              onSuccess: function(){
-                ok.style.display = 'inline-flex';
-                fail.style.display = 'none';
-                window.location = "{{ success_url }}";
-              },
-              onFail: function(){
-                ok.style.display = 'none';
-                fail.style.display = 'inline-flex';
-                window.location = "{{ fail_url }}";
-              },
-              onComplete: function(){
-                // начинаем поллинг статуса — на случай, если пользователь закрыл окно
+              onSuccess: function(){ ok.style.display='flex'; fail.style.display='none'; window.location="{{ success_url }}"; },
+              onFail:    function(){ ok.style.display='none'; fail.style.display='flex'; window.location="{{ fail_url }}"; },
+              onComplete:function(){
+                // поллинг статуса
                 const url = "{{ status_api }}";
-                let n = 0, max = 60; // до 2 минут
-                const t = setInterval(async () => {
+                let tries=0, t=setInterval(async ()=>{
                   try{
-                    const r = await fetch(url, {cache:'no-store'});
-                    const j = await r.json();
-                    if (j && (j.paid || j.status === 'paid')){
-                      clearInterval(t);
-                      ok.style.display = 'inline-flex';
-                      fail.style.display = 'none';
-                      setLoading(false);
-                    }
+                    const r=await fetch(url,{cache:'no-store'}); const j=await r.json();
+                    if (j && (j.paid || j.status==='paid')){ clearInterval(t); ok.style.display='flex'; fail.style.display='none'; }
                   }catch(e){}
-                  if (++n >= max){ clearInterval(t); setLoading(false); }
+                  if (++tries>60) clearInterval(t);
                 }, 2000);
+                setLoading(false);
               }
             }
           );
-        } catch(e){
-          console.error(e);
-          setLoading(false);
-          alert('Не удалось открыть виджет оплаты. Попробуйте ещё раз или свяжитесь с поддержкой.');
+        }catch(e){
+          console.error(e); setLoading(false);
+          alert('Не удалось открыть виджет оплаты. Попробуйте ещё раз.');
         }
       }
 
-      document.getElementById('pay').addEventListener('click', openWidget);
+      btn.addEventListener('click', openWidget);
 
       // Автозапуск по ?autostart=1
-      try{
-        const q = new URLSearchParams(location.search);
-        if (q.get('autostart') === '1'){ setTimeout(() => document.getElementById('pay').click(), 400); }
-      }catch(e){}
+      try{ if (new URLSearchParams(location.search).get('autostart')==='1'){ setTimeout(()=>btn.click(), 400); } }catch(e){}
     })();
   </script>
 </body>
