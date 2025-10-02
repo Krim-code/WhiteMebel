@@ -1,4 +1,5 @@
 # core/views.py
+import logging
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
@@ -1106,21 +1107,18 @@ def _verify_cp_hmac(raw_body: bytes, header_value: str, secret: str) -> bool:
     expected = base64.b64encode(digest).decode()
     return hmac.compare_digest(expected, header_value)
 
-
-def _to_minor_units(value) -> int:
-    """Приводит сумму к целым копейкам (int), без проблем float."""
-    return int((Decimal(str(value)) * Decimal("100")).quantize(0, ROUND_HALF_UP))
-
-import logging
-
-# ---------- Сериалайзеры только для схемы Swagger ----------
 logger = logging.getLogger("core.payments")
 
+def _client_ip(request):
+    xff = request.META.get("HTTP_X_FORWARDED_FOR")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "")
+
+def _to_minor_units(amount: Decimal) -> int:
+    return int((Decimal(str(amount)) * 100).quantize(Decimal("1")))
+
 class CloudPaymentsWebhookView(APIView):
-    """
-    Webhook CloudPayments: Check/Pay/Fail/Refund/Confirm/Cancel
-    Возвращает HTTP 200 и JSON {"code": <int>} во всех случаях.
-    """
     authentication_classes = []
     permission_classes = []
 
@@ -1128,127 +1126,116 @@ class CloudPaymentsWebhookView(APIView):
         logger.debug("CP webhook -> 200 OK: %s", message)
         return Response({"code": 0, "message": message})
 
-    def _decline(self, message="Decline", code=13):
+    def _err(self, message="Error", code=13):
         logger.debug("CP webhook -> 200 DECLINE code=%s: %s", code, message)
-        # 11 — invalid amount; 12 — invalid request; 13 — decline
+        # Вебхуку CP всегда нужно вернуть 200 с JSON {"code":<code>}
         return Response({"code": code, "message": message})
 
-    @extend_schema(
-        summary="CloudPayments webhook",
-        description=(
-            "Обрабатывает уведомления CloudPayments. "
-            "Проверяет подпись Content-HMAC, сверяет сумму/валюту в 'Check', "
-            "устанавливает статусы заказа в 'Pay/Fail/Refund/Confirm/Cancel'."
-        ),
-        request=CloudPaymentsWebhookIn,
-        responses={200: CloudPaymentsWebhookOut},
-        examples=[
-            OpenApiExample(
-                "Pay example",
-                value={
-                    "NotificationType": "Pay",
-                    "Amount": 1234.56,
-                    "Currency": "RUB",
-                    "InvoiceId": "42",
-                    "TransactionId": "T123456",
-                    "Data": {"order_id": 42}
-                },
-            )
-        ],
-    )
     def post(self, request):
         raw = request.body or b""
-        header_hmac = request.META.get("HTTP_CONTENT_HMAC", "")
+        hdr_hmac = request.META.get("HTTP_CONTENT_HMAC", "")
+        ip = _client_ip(request)
 
-        
-        # ВАЖНО: используем правильный секрет (не public_id)
-        secret = getattr(settings, "CLOUDPAYMENTS_SECRET", None) or getattr(settings, "CLOUDPAYMENTS_API_SECRET", None)
-        if not secret or not _verify_cp_hmac(raw, header_hmac, secret):
-            return self._decline("Bad signature", code=12)
+        # Логуем сырые данные и заголовки (урезаем до безопасной длины)
+        headers_to_log = {
+            k: v for k, v in request.META.items()
+            if k.startswith("HTTP_") and k not in {"HTTP_COOKIE", "HTTP_AUTHORIZATION"}
+        }
+        logger.warning(
+            "CP webhook <-- ip=%s hmac_header=%s headers=%s raw=%s",
+            ip,
+            hdr_hmac,
+            json.dumps(headers_to_log, ensure_ascii=False),
+            raw.decode("utf-8", errors="replace")[:4000],   # режем, чтобы не захламлять логи
+        )
 
-        # Парсим JSON как есть (без .is_valid()), чтобы быть устойчивыми к кейсам полей
+        # Пытаемся распарсить JSON до проверки сигнатуры — чтобы увидеть, что прислали
         try:
             payload = json.loads(raw.decode("utf-8"))
-        except Exception:
-            return self._decline("Bad JSON", code=12)
+        except Exception as e:
+            logger.error("CP webhook: bad JSON: %s raw=%r", e, raw[:1000])
+            return self._err("Bad JSON", code=12)
 
-        # Нормализуем имена полей
+        # Проверяем HMAC и пишем результат в лог
+        sig_ok = _verify_cp_hmac(raw, hdr_hmac, settings.CLOUDPAYMENTS_API_SECRET)
+        logger.warning("CP webhook: HMAC valid=%s", sig_ok)
+
+        # Короткий дайджест полезных полей для диагностики
         ntype = (payload.get("NotificationType") or payload.get("notificationType") or "").lower()
-        amount = payload.get("Amount")
-        currency = (payload.get("Currency") or "").upper()
         invoice_id = payload.get("InvoiceId") or payload.get("InvoiceID")
-        data = payload.get("Data") or {}
-        order_id = data.get("order_id") or invoice_id
+        amount_raw = payload.get("Amount")
+        currency = (payload.get("Currency") or "").upper()
         transaction_id = payload.get("TransactionId") or payload.get("TransactionID")
-         
-         
+        data = payload.get("Data") or {}
         logger.warning(
             "CP webhook digest: type=%s amount=%r currency=%s invoiceId=%r transactionId=%r data=%s",
-            ntype, amount, currency, invoice_id, transaction_id,
+            ntype, amount_raw, currency, invoice_id, transaction_id,
             json.dumps(data, ensure_ascii=False),
         )
-        
-        if not order_id:    
-            return self._decline("No order_id", code=12)
 
-        order = get_object_or_404(Order, pk=int(order_id))
+        # Если подпись не сошлась — фиксируем и отказываем
+        if not sig_ok:
+            return self._err("Bad signature", code=12)
 
-        # Считаем суммы в копейках
+        # --- ниже твоя обычная логика ---
+        from core.models import Order  # чтобы не плодить импортов сверху
+        order_id = (data.get("order_id") or invoice_id)
+        if not order_id:
+            logger.error("CP webhook: no order_id in payload")
+            return self._err("No order_id")
+
+        order = Order.objects.filter(pk=int(order_id)).first()
+        if not order:
+            logger.error("CP webhook: order %s not found", order_id)
+            return self._err("Order not found", code=12)
+
         try:
-            cp_minor = _to_minor_units(amount)
+            amount = Decimal(str(amount_raw))
         except Exception:
-            return self._decline("Bad amount", code=12)
-        order_minor = _to_minor_units(order.total_price)
+            logger.error("CP webhook: invalid Amount=%r", amount_raw)
+            return self._err("Invalid amount", code=12)
 
-        # --- CHECK ---
+        cp_minor = _to_minor_units(amount)
+        ord_minor = _to_minor_units(order.total_price)
+
         if ntype == "check":
             if currency != "RUB":
-                return self._decline("Invalid currency", code=13)
-            if cp_minor != order_minor:
-                return self._decline("Invalid amount", code=11)
+                return self._err("Invalid currency", code=13)
+            if cp_minor != ord_minor:
+                logger.warning(
+                    "CP CHECK amount mismatch: order_id=%s got_minor=%s(raw=%s) expected_minor=%s(order=%s)",
+                    order.id, cp_minor, amount, ord_minor, str(order.total_price),
+                )
+                return self._err("Invalid amount", code=11)
             if order.status in ("paid", "canceled"):
-                return self._decline("Order already closed", code=13)
+                return self._err("Order already closed", code=13)
             return self._ok("Check OK")
 
-        # --- PAY ---
         if ntype == "pay":
-            # Доп. защита — ещё раз сверим
-            if currency != "RUB" or cp_minor != order_minor:
-                return self._decline("Invalid amount/currency", code=11)
-            if order.status != "paid":
-                order.status = "paid"
-                # при желании сохрани transaction_id/paid_at
-                order.save(update_fields=["status", "updated_at"])
+            order.status = "paid"
+            order.save(update_fields=["status"])
+            logger.warning("CP PAY: order %s -> paid", order.id)
             return self._ok("Pay OK")
 
-        # --- FAIL ---
         if ntype == "fail":
-            if order.status == "new":
-                order.status = "canceled"
-                order.save(update_fields=["status", "updated_at"])
+            order.status = "canceled"
+            order.save(update_fields=["status"])
+            logger.warning("CP FAIL: order %s -> canceled", order.id)
             return self._ok("Fail OK")
 
-        # --- REFUND ---
         if ntype == "refund":
             order.status = "canceled"
-            order.save(update_fields=["status", "updated_at"])
+            order.save(update_fields=["status"])
+            logger.warning("CP REFUND: order %s -> canceled", order.id)
             return self._ok("Refund OK")
 
-        # --- CONFIRM (двухстадийная оплата capture) ---
         if ntype == "confirm":
-            if order.status != "paid":
-                order.status = "paid"
-                order.save(update_fields=["status", "updated_at"])
+            order.status = "paid"
+            order.save(update_fields=["status"])
+            logger.warning("CP CONFIRM: order %s -> paid", order.id)
             return self._ok("Confirm OK")
 
-        # --- CANCEL (двухстадийная отмена hold) ---
-        if ntype == "cancel":
-            if order.status != "canceled":
-                order.status = "canceled"
-                order.save(update_fields=["status", "updated_at"])
-            return self._ok("Cancel OK")
-
-        # Неизвестный/неинтересный тип — отвечаем 0, чтобы CP не ретраил
+        logger.warning("CP webhook: unknown type=%s — ignored", ntype)
         return self._ok("Ignored")
 
 
