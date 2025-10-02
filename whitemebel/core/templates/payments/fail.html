@@ -35,12 +35,13 @@
       </div>
       <div class="body">
         <div class="bad">⨯ Оплата не прошла</div>
+        <br>
         <h1 class="title">Что-то пошло не так</h1>
         <p class="sub">Платёж не был завершён. Вы можете попробовать ещё раз или выбрать другой способ оплаты.</p>
 
         <div class="actions">
           {% if order %}
-            <a class="btn btn-primary" href="{% url 'payments_pay' order.id %}?autostart=1">Попробовать снова</a>
+            <a class="btn btn-primary" href="{% url 'cp-pay' order.id %}?autostart=1">Попробовать снова</a>
           {% endif %}
           <a class="btn btn-secondary" href="/">На главную</a>
         </div>

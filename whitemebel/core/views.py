@@ -1359,3 +1359,20 @@ class ServiceListView(ListAPIView):
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
+    
+class OrderAcceptedView(TemplateView):
+    template_name = "payments/order_accepted.html"
+    authentication_classes = []
+    permission_classes = []
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        order = get_object_or_404(Order, pk=kwargs["order_id"])
+        req = self.request
+        ctx.update({
+            "order": order,
+            "status_api": req.build_absolute_uri(f"/api/orders/{order.id}/status/"),
+            # опциональная кнопка "Оплатить онлайн сейчас"
+            "pay_url":  req.build_absolute_uri(f"/api/payments/pay/{order.id}/?autostart=1"),
+        })
+        return ctx

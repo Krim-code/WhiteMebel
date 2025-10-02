@@ -38,8 +38,19 @@
       </div>
       <div class="body">
         <div class="ok">✓ Оплата прошла успешно</div>
+        <br>
         <h1 class="title">Спасибо! Мы приняли ваш заказ.</h1>
-        <p class="sub">Статус заказа: <b>{{ order.status|default:"paid" }}</b>. Подтверждение отправлено на вашу почту/телефон.</p>
+        <p class="sub">
+            Статус заказа:
+        <b>
+            {% if order %}
+            {{ order.get_status_display }}
+            {% else %}
+            Оплачен
+            {% endif %}
+        </b>.
+            Подтверждение отправлено на вашу почту/телефон.
+        </p>
 
         <div class="grid">
           <div class="cell">
@@ -62,7 +73,6 @@
 
         <div class="actions">
           <a class="btn btn-primary" href="/">На главную</a>
-          <button class="btn btn-secondary" onclick="history.back()">Вернуться назад</button>
         </div>
       </div>
       <div class="foot">
