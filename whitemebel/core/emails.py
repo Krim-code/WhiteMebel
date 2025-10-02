@@ -1,19 +1,30 @@
 # core/emails.py
 from decimal import Decimal
+import threading
+import logging
+
 from django.conf import settings
-from django.core.mail import EmailMultiAlternatives
+from django.core.mail import EmailMultiAlternatives, get_connection
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
+from django.db import connection
+
+from core.models import Order  # чтобы рефетчить заказ в воркере
+
+
+log = logging.getLogger(__name__)
+
 
 def _money(x) -> Decimal:
     return Decimal(x).quantize(Decimal("0.01"))
 
-def send_order_notifications(order):
+
+def send_order_notifications(order: Order) -> None:
     """
     Шлём админам и покупателю. HTML + текст.
-    Вызывать через transaction.on_commit().
+    ВАЖНО: это синхронная функция — вызывай её только из фонового воркера
+    или из transaction.on_commit (но лучше фоном).
     """
-    # подтягиваем всё, что надо в шаблон
     items = list(order.items.select_related("product").all())
     services = list(order.orderservice_set.select_related("service").all())
 
@@ -21,7 +32,6 @@ def send_order_notifications(order):
         "order": order,
         "items": items,
         "services": services,
-        # на случай если сериалайзер положил временные поля:
         "subtotal": getattr(order, "_subtotal", None),
         "services_total": getattr(order, "_services_total", None),
         "delivery_base": getattr(order, "_delivery_base", None),
@@ -46,9 +56,7 @@ def send_order_notifications(order):
         try:
             msg.send(fail_silently=False)
         except Exception:
-            # не убиваем запрос, логи — в консоль/серверные логи
-            import logging
-            logging.getLogger(__name__).exception("Order #%s: admin email send failed", order.id)
+            log.exception("Order #%s: admin email send failed", order.id)
 
     # === Покупателю ===
     if order.email:
@@ -65,5 +73,44 @@ def send_order_notifications(order):
         try:
             msg2.send(fail_silently=False)
         except Exception:
-            import logging
-            logging.getLogger(__name__).exception("Order #%s: customer email send failed", order.id)
+            log.exception("Order #%s: customer email send failed", order.id)
+
+
+# ---------- Асинхронная обёртка ----------
+
+def _email_worker(order_id: int) -> None:
+    """
+    Фоновый воркер: рефетчит заказ и безопасно шлёт письма,
+    чтобы SMTP/шаблоны не блокировали веб-процесс.
+    """
+    try:
+        order = Order.objects.get(pk=order_id)
+    except Order.DoesNotExist:
+        log.warning("email worker: order %s not found", order_id)
+        return
+
+    try:
+        # Опционально: прогреть SMTP и использовать EMAIL_TIMEOUT из settings
+        get_connection()
+        send_order_notifications(order)
+    except Exception as e:
+        log.exception("email worker failed for order %s: %s", order_id, e)
+    finally:
+        # Закрыть подключение к БД в треде
+        try:
+            connection.close()
+        except Exception:
+            pass
+
+
+def send_order_notifications_async(order_id: int) -> None:
+    """
+    Запустить отправку писем в отдельном daemon-треде. Возврат мгновенный.
+    """
+    t = threading.Thread(
+        target=_email_worker,
+        args=(order_id,),
+        daemon=True,
+        name=f"order-mail-{order_id}",
+    )
+    t.start()

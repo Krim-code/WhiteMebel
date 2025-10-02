@@ -204,9 +204,12 @@ EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "1") in {"1","true","yes"}
 EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "0") in {"1","true","yes"}
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "revi.krim@yandex.ru")
 SERVER_EMAIL = os.getenv("SERVER_EMAIL", DEFAULT_FROM_EMAIL)
+EMAIL_TIMEOUT = 10  # сек
+
 
 # Список email'ов, кого оповещать о новом заказе (через запятую)
 ORDER_NOTIFY_EMAILS = [e.strip() for e in os.getenv("ORDER_NOTIFY_EMAILS", "").split(",") if e.strip()]
 
 CLOUDPAYMENTS_PUBLIC_ID=os.getenv("CLOUDPAYMENTS_PUBLIC_ID","")
 CLOUDPAYMENTS_API_SECRET=os.getenv("CLOUDPAYMENTS_API_SECRET","")
+

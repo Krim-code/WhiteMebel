@@ -24,7 +24,7 @@ from core.serializers import MainSliderSerializer
 from decimal import Decimal, ROUND_HALF_UP
 from urllib.parse import parse_qs, unquote_plus
 from rest_framework.renderers import TemplateHTMLRenderer
-from core.emails import send_order_notifications
+from core.emails import send_order_notifications, send_order_notifications_async
 
 from decimal import Decimal
 from core.models import DeliveryRegion, DeliveryDiscount
@@ -1035,7 +1035,7 @@ class OrderCreateView(CreateAPIView):
         # создаём заказ (расчёты внутри сериализатора)
         self.order = serializer.save()
         # неблокирующие побочные действия — строго после коммита
-        transaction.on_commit(lambda: send_order_notifications(self.order))
+        transaction.on_commit(lambda: send_order_notifications_async(self.order.id))
         # transaction.on_commit(lambda: push_order_to_amocrm_async(self.order.id))  # когда подключишь
 
     def create(self, request, *args, **kwargs):
