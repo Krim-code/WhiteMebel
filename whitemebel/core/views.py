@@ -24,6 +24,7 @@ from core.serializers import MainSliderSerializer
 from decimal import Decimal, ROUND_HALF_UP
 from urllib.parse import parse_qs, unquote_plus
 from rest_framework.renderers import TemplateHTMLRenderer
+from core.emails import send_order_notifications_async
 
 from decimal import Decimal
 from core.models import DeliveryRegion, DeliveryDiscount
@@ -931,7 +932,6 @@ class ContactRequestCreateView(CreateAPIView):
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)
 
-
 class OrderCreateView(CreateAPIView):
     permission_classes = [AllowAny]
     serializer_class = OrderCreateSerializer
@@ -943,7 +943,7 @@ class OrderCreateView(CreateAPIView):
         responses=OrderCreateSerializer,
         examples=[
             OpenApiExample(
-                "Пример заказа (доставка)",
+                "Пример заказа (доставка, оплата онлайн)",
                 value={
                     "full_name": "Иванов Иван",
                     "phone": "+7 (999) 123-45-67",
@@ -951,31 +951,28 @@ class OrderCreateView(CreateAPIView):
                     "city": "Москва",
                     "address": "ул. Пушкина, д. 10",
                     "comment": "Позвонить за час",
-                    "payment_method": "cod",
-                    "total_price": "35200.00",
+                    "payment_method": "online",
                     "delivery_type": "delivery",
                     "region": "moscow-mo",
                     "items": [
                         {"product_id": 123, "quantity": 2},
                         {"product_id": 456, "quantity": 1}
                     ],
-                    "services": [
-                        {"service_id": 1}
-                    ]
+                    "services": [{"service_id": 1}]
                 },
                 request_only=True,
             ),
             OpenApiExample(
-                "Пример ответа",
+                "Ответ (online): с ссылкой на оплату и статус",
                 value={
-                    "id": 1,
+                    "id": 10,
                     "full_name": "Иванов Иван",
                     "phone": "+79991234567",
                     "email": "ivan@example.com",
                     "city": "Москва",
                     "address": "ул. Пушкина, д. 10",
                     "comment": "Позвонить за час",
-                    "payment_method": "cod",
+                    "payment_method": "online",
                     "delivery_type": "delivery",
                     "status": "new",
                     "created_at": "2025-09-29T12:34:56Z",
@@ -997,7 +994,35 @@ class OrderCreateView(CreateAPIView):
                     "services_total": "2500.00",
                     "delivery_base": "1500.00",
                     "delivery_discount": "0.00",
-                    "delivery_cost": "1500.00"
+                    "delivery_cost": "1500.00",
+                    "status_api": "https://white-mebel.com/api/orders/10/status/",
+                    "pay_url": "https://white-mebel.com/api/payments/pay/10/"
+                },
+                response_only=True,
+            ),
+            OpenApiExample(
+                "Ответ (наложка): с accepted_url и статусом",
+                value={
+                    "id": 11,
+                    "full_name": "Иванов Иван",
+                    "phone": "+79991234567",
+                    "email": "ivan@example.com",
+                    "city": "Москва",
+                    "address": "ул. Пушкина, д. 10",
+                    "comment": "Позвонить за час",
+                    "payment_method": "cod",
+                    "delivery_type": "delivery",
+                    "status": "new",
+                    "created_at": "2025-09-29T12:35:00Z",
+                    "items_brief": [],
+                    "services_brief": [],
+                    "subtotal": "0.00",
+                    "services_total": "0.00",
+                    "delivery_base": "0.00",
+                    "delivery_discount": "0.00",
+                    "delivery_cost": "0.00",
+                    "status_api": "https://white-mebel.com/api/orders/11/status/",
+                    "accepted_url": "https://white-mebel.com/api/orders/11/accepted/"
                 },
                 response_only=True,
             ),
@@ -1005,7 +1030,50 @@ class OrderCreateView(CreateAPIView):
     )
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)
-    
+
+    def perform_create(self, serializer):
+        # создаём заказ (расчёты внутри сериализатора)
+        self.order = serializer.save()
+        # неблокирующие побочные действия — строго после коммита
+        transaction.on_commit(lambda: send_order_notifications_async(self.order.id))
+        # transaction.on_commit(lambda: push_order_to_amocrm_async(self.order.id))  # когда подключишь
+
+    def create(self, request, *args, **kwargs):
+        """
+        Переопределяем create(), чтобы добавить полезные ссылки (pay_url / accepted_url, status_api)
+        без задержки ответа фронту.
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+
+        data = dict(serializer.data)  # копируем, чтобы дополнить полями ответа
+
+        if getattr(self, "order", None):
+            try:
+                # статус заказа (поллинг)
+                status_url = request.build_absolute_uri(
+                    reverse("order-status", kwargs={"order_id": self.order.id})
+                )
+                data["status_api"] = status_url
+
+                if self.order.payment_method == "online":
+                    # ссылка на страницу с виджетом CloudPayments
+                    pay_url = request.build_absolute_uri(
+                        reverse("cp-pay", kwargs={"order_id": self.order.id})
+                    )
+                    data["pay_url"] = pay_url
+                else:
+                    # страница "заказ принят" (оплата при получении)
+                    accepted_url = request.build_absolute_uri(
+                        reverse("order-accepted", kwargs={"order_id": self.order.id})
+                    )
+                    data["accepted_url"] = accepted_url
+            except Exception:
+                pass
+
+        headers = self.get_success_headers(serializer.data)
+        return Response(data, status=status.HTTP_201_CREATED, headers=headers)
     
 
 

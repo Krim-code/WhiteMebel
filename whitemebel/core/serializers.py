@@ -667,7 +667,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         order._delivery_base = delivery_base
         order._delivery_discount = delivery_discount
         order._delivery_cost = delivery_cost
-        transaction.on_commit(lambda: send_order_notifications(order))
+        # transaction.on_commit(lambda: send_order_notifications(order))
         return order
 
     # ----- read-only computed -----
