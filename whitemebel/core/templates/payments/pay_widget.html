@@ -132,8 +132,8 @@
               invoiceId: "{{ order.id }}",
               email: email,                              // <-- передаём email в платёж
               data: { order_id: "{{ order.id }}", email: email },
-              skin: "modern",
-              requireEmail: false,// и дублируем в Data
+              skin: "classic",
+              requireEmail: true,// и дублируем в Data
             },
             {
               onSuccess: function(){ ok.style.display='flex'; fail.style.display='none'; window.location="{{ success_url }}"; },

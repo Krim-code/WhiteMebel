@@ -6,7 +6,7 @@ from rest_framework.decorators import action
 from django.db.models import Case, When, IntegerField, Count, Min, Max, Q, Value ,Prefetch
 from rest_framework.response import Response
 from django_filters import rest_framework as dj_filters
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes,OpenApiResponse
 from collections import OrderedDict
 from django.views.generic import TemplateView
 from core.models import Category, ProductAttribute, Tag
@@ -23,6 +23,7 @@ from core.models import MainSlider
 from core.serializers import MainSliderSerializer
 from decimal import Decimal, ROUND_HALF_UP
 from urllib.parse import parse_qs, unquote_plus
+from rest_framework.renderers import TemplateHTMLRenderer
 
 from decimal import Decimal
 from core.models import DeliveryRegion, DeliveryDiscount
@@ -1087,17 +1088,35 @@ class OrderStatusView(APIView):
 class PaymentSuccessView(APIView):
     authentication_classes = []
     permission_classes = []
+    renderer_classes = [TemplateHTMLRenderer]
 
+    @extend_schema(
+        summary="Страница успешной оплаты",
+        description="Возвращает HTML-страницу с подтверждением оплаты",
+        responses={200: OpenApiResponse(description="HTML success page")},
+    )
     def get(self, request):
-        return Response({"status": "ok", "order_id": int(request.query_params.get("order_id", 0))})
+        order_id = int(request.query_params.get("order_id") or 0)
+        order = Order.objects.filter(pk=order_id).select_related("user").first()
+        ctx = {"order": order, "order_id": order_id}
+        return Response(ctx, template_name="payments/success.html")
 
 
 class PaymentFailView(APIView):
     authentication_classes = []
     permission_classes = []
+    renderer_classes = [TemplateHTMLRenderer]
 
+    @extend_schema(
+        summary="Страница неуспешной оплаты",
+        description="Возвращает HTML-страницу с информацией о неудачной оплате",
+        responses={200: OpenApiResponse(description="HTML fail page")},
+    )
     def get(self, request):
-        return Response({"status": "fail", "order_id": int(request.query_params.get("order_id", 0))})
+        order_id = int(request.query_params.get("order_id") or 0)
+        order = Order.objects.filter(pk=order_id).first()
+        ctx = {"order": order, "order_id": order_id}
+        return Response(ctx, template_name="payments/fail.html")
 
 
 # ---------- Webhook от CloudPayments (Check/Pay/Fail/Refund/Confirm) ----------

@@ -48,5 +48,5 @@ urlpatterns = [
 
     # Важно: URL вебхука CloudPayments (передашь в ЛК CloudPayments)
     path("payments/cloudpayments/webhook/", CloudPaymentsWebhookView.as_view(), name="cp-webhook"),
-    path("api/services/", ServiceListView.as_view(), name="service-list"),
+    path("services/", ServiceListView.as_view(), name="service-list"),
     ]
