@@ -27,7 +27,7 @@ services:
       DJANGO_DB_PORT: 5432
 
 
-      EMAIL_FORCE_IPV4: "1"
+      EMAIL_FORCE_IPV4: "0"
       EMAIL_HOST: ${EMAIL_HOST}
       EMAIL_PORT: ${EMAIL_PORT}
       EMAIL_HOST_USER: ${EMAIL_HOST_USER}
@@ -43,6 +43,8 @@ services:
     volumes:
       - static_data:/app/staticfiles
       - media_data:/app/media
+    extra_hosts:
+      - "smtp.yandex.ru:77.88.21.158"
 
       
   nuxt:
