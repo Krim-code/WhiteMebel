@@ -904,6 +904,8 @@ class TagListView(APIView):
 
 class ContactRequestCreateView(CreateAPIView):
     """POST /api/contact-requests/ — оставить телефон для звонка."""
+    permission_classes = [AllowAny]
+    authentication_classes = []
     serializer_class = ContactRequestCreateSerializer
     queryset = ContactRequest.objects.all()
 
@@ -934,6 +936,7 @@ class ContactRequestCreateView(CreateAPIView):
 
 class OrderCreateView(CreateAPIView):
     permission_classes = [AllowAny]
+    authentication_classes = []
     serializer_class = OrderCreateSerializer
 
     @extend_schema(
